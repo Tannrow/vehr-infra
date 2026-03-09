@@ -1,13 +1,3 @@
-# apply-staging.yml
-# Applies the Bicep template to the staging environment.
-# Optionally overrides the container image tags so that app repos can call
-# this workflow after pushing a new image.
-#
-# Triggers:
-#   - Push to main when infra/** changes
-#   - Manual dispatch (with optional image tag overrides)
-#   - Repository dispatch from revenue-ui / VEHR repos
-
 name: Apply – Staging
 
 on:
@@ -30,7 +20,6 @@ on:
     types: [deploy-staging]
 
 permissions:
-  id-token: write
   contents: read
 
 jobs:
@@ -43,26 +32,28 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Azure Login (OIDC)
+      - name: Azure Login
         uses: azure/login@v2
         with:
-          client-id: ${{ secrets.AZURE_CLIENT_ID }}
-          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
-          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
 
-      # Resolve image tags — prefer explicit inputs, fall back to 'latest'
       - name: Resolve image tags
         id: tags
+        env:
+          ACR_SERVER: ${{ vars.ACR_LOGIN_SERVER_STAGING }}
+          UI_IMAGE_REPOSITORY_STAGING: ${{ vars.UI_IMAGE_REPOSITORY_STAGING }}
+          BACKEND_IMAGE_REPOSITORY_STAGING: ${{ vars.BACKEND_IMAGE_REPOSITORY_STAGING }}
         run: |
-          ACR_SERVER="${{ vars.ACR_LOGIN_SERVER_STAGING }}"
+          set -euo pipefail
 
-          # UI image
+          UI_REPO="${UI_IMAGE_REPOSITORY_STAGING:-vehr-revenue-ui}"
+          BACKEND_REPO="${BACKEND_IMAGE_REPOSITORY_STAGING:-vehr}"
+
           UI_TAG="${{ github.event.inputs.ui_image_tag || github.event.client_payload.ui_image_tag || 'latest' }}"
-          echo "ui_image=${ACR_SERVER}/revenue-ui:${UI_TAG}" >> "$GITHUB_OUTPUT"
+          BACKEND_TAG="${{ github.event.inputs.backend_image_tag || github.event.client_payload.backend_image_tag || 'latest' }}"
 
-          # Backend image
-          BE_TAG="${{ github.event.inputs.backend_image_tag || github.event.client_payload.backend_image_tag || 'latest' }}"
-          echo "backend_image=${ACR_SERVER}/vehr:${BE_TAG}" >> "$GITHUB_OUTPUT"
+          echo "ui_image=${ACR_SERVER}/${UI_REPO}:${UI_TAG}" >> "$GITHUB_OUTPUT"
+          echo "backend_image=${ACR_SERVER}/${BACKEND_REPO}:${BACKEND_TAG}" >> "$GITHUB_OUTPUT"
 
       - name: Bicep Deploy
         uses: azure/cli@v2
@@ -85,46 +76,63 @@ jobs:
         with:
           azcliversion: latest
           inlineScript: |
-            OUTPUTS=$(az deployment group show \
+            set -euo pipefail
+
+            UI_FQDN=$(az deployment group show \
               --resource-group "${{ vars.AZURE_RESOURCE_GROUP_STAGING }}" \
               --name "deploy-staging-${{ github.run_number }}" \
-              --query properties.outputs \
-              --output json)
-            UI_FQDN=$(echo "$OUTPUTS" | jq -r '.uiFqdn.value // empty')
-            BE_FQDN=$(echo "$OUTPUTS" | jq -r '.backendFqdn.value // empty')
-            echo "ui_fqdn=$UI_FQDN" >> "$GITHUB_OUTPUT"
-            echo "backend_fqdn=$BE_FQDN" >> "$GITHUB_OUTPUT"
+              --query "properties.outputs.uiFqdn.value" \
+              --output tsv)
+
+            BACKEND_FQDN=$(az deployment group show \
+              --resource-group "${{ vars.AZURE_RESOURCE_GROUP_STAGING }}" \
+              --name "deploy-staging-${{ github.run_number }}" \
+              --query "properties.outputs.backendFqdn.value" \
+              --output tsv)
+
+            echo "ui_fqdn=${UI_FQDN}" >> "$GITHUB_OUTPUT"
+            echo "backend_fqdn=${BACKEND_FQDN}" >> "$GITHUB_OUTPUT"
 
       - name: Health check – UI
         run: |
+          set -euo pipefail
           FQDN="${{ steps.deployment.outputs.ui_fqdn }}"
           if [ -z "$FQDN" ]; then
-            echo "No UI FQDN returned — skipping health check."
-            exit 0
+            echo "::error::No UI FQDN returned from deployment outputs."
+            exit 1
           fi
-          echo "Checking https://${FQDN}/..."
+
+          URL="https://${FQDN}/api/health"
+          echo "Checking ${URL}..."
+
           for i in $(seq 1 10); do
-            STATUS=$(curl -s -o /dev/null -w '%{http_code}' "https://${FQDN}/" || true)
+            STATUS=$(curl -s -o /tmp/ui-health.txt -w '%{http_code}' --max-time 20 "$URL" || true)
             echo "Attempt $i — HTTP $STATUS"
-            if [[ "$STATUS" == "200" || "$STATUS" == "301" || "$STATUS" == "302" ]]; then
+            if [[ "$STATUS" == "200" ]]; then
               echo "UI is healthy."
               exit 0
             fi
             sleep 10
           done
-          echo "::error::UI health check failed after 10 attempts."
+
+          echo "::error::UI health check failed."
+          cat /tmp/ui-health.txt || true
           exit 1
 
       - name: Health check – Backend
         run: |
+          set -euo pipefail
           FQDN="${{ steps.deployment.outputs.backend_fqdn }}"
           if [ -z "$FQDN" ]; then
-            echo "No backend FQDN returned — skipping health check."
-            exit 0
+            echo "::error::No backend FQDN returned from deployment outputs."
+            exit 1
           fi
-          echo "Checking https://${FQDN}/health..."
+
+          URL="https://${FQDN}/api/v1/health"
+          echo "Checking ${URL}..."
+
           for i in $(seq 1 10); do
-            STATUS=$(curl -s -o /dev/null -w '%{http_code}' "https://${FQDN}/health" || true)
+            STATUS=$(curl -s -o /tmp/backend-health.txt -w '%{http_code}' --max-time 20 "$URL" || true)
             echo "Attempt $i — HTTP $STATUS"
             if [[ "$STATUS" == "200" ]]; then
               echo "Backend is healthy."
@@ -132,18 +140,22 @@ jobs:
             fi
             sleep 10
           done
-          echo "::error::Backend health check failed after 10 attempts."
+
+          echo "::error::Backend health check failed."
+          cat /tmp/backend-health.txt || true
           exit 1
 
       - name: Summary
         run: |
-          echo "## ✅ Staging deployment complete" >> "$GITHUB_STEP_SUMMARY"
-          echo "" >> "$GITHUB_STEP_SUMMARY"
-          echo "| App | URL |" >> "$GITHUB_STEP_SUMMARY"
-          echo "| --- | --- |" >> "$GITHUB_STEP_SUMMARY"
-          echo "| UI | https://${{ steps.deployment.outputs.ui_fqdn }} |" >> "$GITHUB_STEP_SUMMARY"
-          echo "| Backend | https://${{ steps.deployment.outputs.backend_fqdn }} |" >> "$GITHUB_STEP_SUMMARY"
-          echo "" >> "$GITHUB_STEP_SUMMARY"
-          echo "Images deployed:" >> "$GITHUB_STEP_SUMMARY"
-          echo "- UI: \`${{ steps.tags.outputs.ui_image }}\`" >> "$GITHUB_STEP_SUMMARY"
-          echo "- Backend: \`${{ steps.tags.outputs.backend_image }}\`" >> "$GITHUB_STEP_SUMMARY"
+          {
+            echo "## Staging deployment complete"
+            echo
+            echo "| App | URL |"
+            echo "| --- | --- |"
+            echo "| UI | https://${{ steps.deployment.outputs.ui_fqdn }} |"
+            echo "| Backend | https://${{ steps.deployment.outputs.backend_fqdn }} |"
+            echo
+            echo "Images deployed:"
+            echo "- UI: \`${{ steps.tags.outputs.ui_image }}\`"
+            echo "- Backend: \`${{ steps.tags.outputs.backend_image }}\`"
+          } >> "$GITHUB_STEP_SUMMARY"
