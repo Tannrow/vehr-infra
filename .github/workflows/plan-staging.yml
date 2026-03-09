@@ -35,76 +35,12 @@ jobs:
         with:
           creds: ${{ secrets.AZURE_CREDENTIALS }}
 
-      - name: Resolve staging secret inputs
-        id: staging-secrets
-        env:
-          AZURE_RESOURCE_GROUP_STAGING: ${{ vars.AZURE_RESOURCE_GROUP_STAGING }}
-          BACKEND_APP_NAME_STAGING: ${{ vars.BACKEND_APP_NAME_STAGING }}
-          KEY_VAULT_NAME_STAGING: ${{ vars.KEY_VAULT_NAME_STAGING }}
-          MANAGED_IDENTITY_RESOURCE_ID_STAGING: ${{ vars.MANAGED_IDENTITY_RESOURCE_ID_STAGING }}
-        run: |
-          set -euo pipefail
-
-          RG="${AZURE_RESOURCE_GROUP_STAGING}"
-          BACKEND_APP_NAME="${BACKEND_APP_NAME_STAGING:-vehr-api-staging}"
-          KEY_VAULT_NAME="${KEY_VAULT_NAME_STAGING:-}"
-          MANAGED_IDENTITY_RESOURCE_ID="${MANAGED_IDENTITY_RESOURCE_ID_STAGING:-}"
-
-          if [ -z "$KEY_VAULT_NAME" ]; then
-            KEY_VAULT_URL=$(az containerapp show \
-              --name "$BACKEND_APP_NAME" \
-              --resource-group "$RG" \
-              --query "properties.configuration.secrets[?name=='db-connection-string'].keyVaultUrl | [0]" \
-              --output tsv 2>/dev/null || true)
-            if [ -n "$KEY_VAULT_URL" ] && [ "$KEY_VAULT_URL" != "null" ]; then
-              KEY_VAULT_NAME="${KEY_VAULT_URL#https://}"
-              KEY_VAULT_NAME="${KEY_VAULT_NAME%%.vault.azure.net*}"
-            fi
-          fi
-
-          if [ -z "$MANAGED_IDENTITY_RESOURCE_ID" ]; then
-            MANAGED_IDENTITY_RESOURCE_ID=$(az containerapp show \
-              --name "$BACKEND_APP_NAME" \
-              --resource-group "$RG" \
-              --query "keys(identity.userAssignedIdentities) | [0]" \
-              --output tsv 2>/dev/null || true)
-            if [ "$MANAGED_IDENTITY_RESOURCE_ID" = "null" ]; then
-              MANAGED_IDENTITY_RESOURCE_ID=''
-            fi
-          fi
-
-          if [ -z "$KEY_VAULT_NAME" ]; then
-            KEY_VAULT_NAME=$(az keyvault list \
-              --resource-group "$RG" \
-              --query "[0].name" \
-              --output tsv 2>/dev/null || true)
-            if [ "$KEY_VAULT_NAME" = "null" ]; then
-              KEY_VAULT_NAME=''
-            fi
-          fi
-
-          if [ -z "$MANAGED_IDENTITY_RESOURCE_ID" ]; then
-            MANAGED_IDENTITY_RESOURCE_ID=$(az identity list \
-              --resource-group "$RG" \
-              --query "[0].id" \
-              --output tsv 2>/dev/null || true)
-            if [ "$MANAGED_IDENTITY_RESOURCE_ID" = "null" ]; then
-              MANAGED_IDENTITY_RESOURCE_ID=''
-            fi
-          fi
-
-          : "${KEY_VAULT_NAME:?Could not resolve KEY_VAULT_NAME_STAGING from workflow variables or existing staging resources}"
-          : "${MANAGED_IDENTITY_RESOURCE_ID:?Could not resolve MANAGED_IDENTITY_RESOURCE_ID_STAGING from workflow variables or existing staging resources}"
-
-          echo "key_vault_name=${KEY_VAULT_NAME}" >> "$GITHUB_OUTPUT"
-          echo "managed_identity_resource_id=${MANAGED_IDENTITY_RESOURCE_ID}" >> "$GITHUB_OUTPUT"
-
       - name: Bicep What-If
         id: whatif
         uses: azure/cli@v2
         env:
-          KEY_VAULT_NAME_STAGING: ${{ steps.staging-secrets.outputs.key_vault_name }}
-          MANAGED_IDENTITY_RESOURCE_ID_STAGING: ${{ steps.staging-secrets.outputs.managed_identity_resource_id }}
+          KEY_VAULT_NAME_STAGING: ${{ vars.KEY_VAULT_NAME_STAGING }}
+          MANAGED_IDENTITY_RESOURCE_ID_STAGING: ${{ vars.MANAGED_IDENTITY_RESOURCE_ID_STAGING }}
         with:
           azcliversion: latest
           inlineScript: |

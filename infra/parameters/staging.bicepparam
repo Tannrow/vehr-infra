@@ -10,6 +10,7 @@ using '../main.bicep'
 
 var keyVaultName = readEnvironmentVariable('KEY_VAULT_NAME_STAGING', '')
 var managedIdentityResourceId = readEnvironmentVariable('MANAGED_IDENTITY_RESOURCE_ID_STAGING', '')
+var hasBackendSecretConfig = !empty(keyVaultName) && !empty(managedIdentityResourceId)
 
 param environment = 'staging'
 param location = 'eastus'
@@ -59,35 +60,34 @@ param uiEnvVars = [
   }
 ]
 
-param backendEnvVars = [
+param backendEnvVars = concat([
   {
     name: 'ASPNETCORE_ENVIRONMENT'
     value: 'Staging'
   }
+], hasBackendSecretConfig ? [
   {
     name: 'ConnectionStrings__DefaultConnection'
     secretRef: 'db-connection-string'
   }
-]
+] : [])
 
 // ── Secrets (pulled from Key Vault via managed identity) ───────────────────
-// ⚠️  REQUIRED: Before deploying, you must:
+// ⚠️  OPTIONAL: Configure these before deploying a backend that needs database access:
 //   1. Create an Azure Key Vault and add the secrets listed below.
 //   2. Create a user-assigned managed identity and grant it "Key Vault Secrets User".
-//   3. Make KEY_VAULT_NAME_STAGING and MANAGED_IDENTITY_RESOURCE_ID_STAGING
-//      available to the deployment command. The GitHub workflows resolve them
-//      automatically from staging overrides or existing Azure resources.
+//   3. Set KEY_VAULT_NAME_STAGING and MANAGED_IDENTITY_RESOURCE_ID_STAGING.
+//      When omitted, staging plans/bootstrap deployments skip the backend Key Vault secret wiring.
 // See docs/SECRETS.md for the full setup guide.
-param backendSecrets = [
+param backendSecrets = hasBackendSecretConfig ? [
   {
     name: 'db-connection-string'
     keyVaultUrl: 'https://${keyVaultName}.vault.azure.net/secrets/db-connection-string'
     identity: managedIdentityResourceId
   }
-]
+] : []
 param uiSecrets = []
 
 // ── Managed identity ─────────────────────────────────────────────────────
-// ⚠️  REQUIRED if using Key Vault secrets: the deployment command must set
-// MANAGED_IDENTITY_RESOURCE_ID_STAGING before evaluating this parameter file.
-param managedIdentityId = managedIdentityResourceId
+// Set MANAGED_IDENTITY_RESOURCE_ID_STAGING when the backend should use Key Vault/managed identity.
+param managedIdentityId = hasBackendSecretConfig ? managedIdentityResourceId : ''

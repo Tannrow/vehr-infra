@@ -1,0 +1,80 @@
+{
+  "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentParameters.json#",
+  "contentVersion": "1.0.0.0",
+  "parameters": {
+    "environment": {
+      "value": "staging"
+    },
+    "location": {
+      "value": "eastus"
+    },
+    "acrName": {
+      "value": "vehracrstaging"
+    },
+    "acrSku": {
+      "value": "Basic"
+    },
+    "containerAppsEnvName": {
+      "value": "vehr-env-staging"
+    },
+    "uiAppName": {
+      "value": "revenue-ui-staging"
+    },
+    "backendAppName": {
+      "value": "vehr-api-staging"
+    },
+    "uiImage": {
+      "value": "vehracrstaging.azurecr.io/revenue-ui:latest"
+    },
+    "backendImage": {
+      "value": "vehracrstaging.azurecr.io/vehr:latest"
+    },
+    "uiTargetPort": {
+      "value": 80
+    },
+    "backendTargetPort": {
+      "value": 8080
+    },
+    "uiMinReplicas": {
+      "value": 0
+    },
+    "backendMinReplicas": {
+      "value": 0
+    },
+    "uiCustomDomains": {
+      "value": []
+    },
+    "backendCustomDomains": {
+      "value": []
+    },
+    "uiEnvVars": {
+      "value": [
+        {
+          "name": "NODE_ENV",
+          "value": "production"
+        },
+        {
+          "name": "VITE_API_URL",
+          "value": "https://vehr-api-staging.<REPLACE_WITH_ENV_DEFAULT_DOMAIN>"
+        }
+      ]
+    },
+    "backendEnvVars": {
+      "value": [
+        {
+          "name": "ASPNETCORE_ENVIRONMENT",
+          "value": "Staging"
+        }
+      ]
+    },
+    "backendSecrets": {
+      "value": []
+    },
+    "uiSecrets": {
+      "value": []
+    },
+    "managedIdentityId": {
+      "value": ""
+    }
+  }
+}
