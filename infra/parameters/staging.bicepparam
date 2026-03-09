@@ -8,6 +8,9 @@
 
 using '../main.bicep'
 
+var keyVaultName = readEnvironmentVariable('KEY_VAULT_NAME_STAGING', '')
+var managedIdentityResourceId = readEnvironmentVariable('MANAGED_IDENTITY_RESOURCE_ID_STAGING', '')
+
 param environment = 'staging'
 param location = 'eastus'
 
@@ -71,23 +74,19 @@ param backendEnvVars = [
 // ⚠️  REQUIRED: Before deploying, you must:
 //   1. Create an Azure Key Vault and add the secrets listed below.
 //   2. Create a user-assigned managed identity and grant it "Key Vault Secrets User".
-//   3. Replace the placeholder values below with your actual Key Vault name and identity resource ID.
-//   4. Set `managedIdentityId` to the resource ID of the managed identity.
+//   3. Set KEY_VAULT_NAME_STAGING in the staging GitHub environment variables.
+//   4. Set MANAGED_IDENTITY_RESOURCE_ID_STAGING to the managed identity resource ID.
 // See docs/SECRETS.md for the full setup guide.
 param backendSecrets = [
   {
     name: 'db-connection-string'
-    // Replace <KEYVAULT_NAME> with your Azure Key Vault name
-    keyVaultUrl: 'https://<KEYVAULT_NAME>.vault.azure.net/secrets/db-connection-string'
-    // Replace with the resource ID of the user-assigned managed identity
-    // e.g. /subscriptions/<sub>/resourceGroups/<rg>/providers/Microsoft.ManagedIdentity/userAssignedIdentities/<name>
-    identity: '<MANAGED_IDENTITY_RESOURCE_ID>'
+    keyVaultUrl: 'https://${keyVaultName}.vault.azure.net/secrets/db-connection-string'
+    identity: managedIdentityResourceId
   }
 ]
 param uiSecrets = []
 
 // ── Managed identity ─────────────────────────────────────────────────────
-// ⚠️  REQUIRED if using Key Vault secrets: replace with the resource ID of your
-// user-assigned managed identity.
-// e.g. /subscriptions/<sub>/resourceGroups/<rg>/providers/Microsoft.ManagedIdentity/userAssignedIdentities/<name>
-param managedIdentityId = '<MANAGED_IDENTITY_RESOURCE_ID>'
+// ⚠️  REQUIRED if using Key Vault secrets: set MANAGED_IDENTITY_RESOURCE_ID_STAGING
+// in the staging GitHub environment variables.
+param managedIdentityId = managedIdentityResourceId

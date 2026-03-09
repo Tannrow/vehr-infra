@@ -17,7 +17,6 @@ on:
   workflow_dispatch:
 
 permissions:
-  id-token: write   # needed for OIDC login
   contents: read
   pull-requests: write  # allows posting what-if output as a PR comment
 
@@ -31,20 +30,23 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Azure Login (OIDC)
+      - name: Azure Login
         uses: azure/login@v2
         with:
-          client-id: ${{ secrets.AZURE_CLIENT_ID }}
-          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
-          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
 
       - name: Bicep What-If
         id: whatif
         uses: azure/cli@v2
+        env:
+          KEY_VAULT_NAME_STAGING: ${{ vars.KEY_VAULT_NAME_STAGING }}
+          MANAGED_IDENTITY_RESOURCE_ID_STAGING: ${{ vars.MANAGED_IDENTITY_RESOURCE_ID_STAGING }}
         with:
           azcliversion: latest
           inlineScript: |
             set -euo pipefail
+            : "${KEY_VAULT_NAME_STAGING:?Missing staging environment variable KEY_VAULT_NAME_STAGING}"
+            : "${MANAGED_IDENTITY_RESOURCE_ID_STAGING:?Missing staging environment variable MANAGED_IDENTITY_RESOURCE_ID_STAGING}"
             RESULT=$(az deployment group what-if \
               --resource-group "${{ vars.AZURE_RESOURCE_GROUP_STAGING }}" \
               --template-file infra/main.bicep \
