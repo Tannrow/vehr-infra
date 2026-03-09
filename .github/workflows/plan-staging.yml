@@ -1,0 +1,86 @@
+# plan-staging.yml
+# Runs `az deployment group what-if` against the staging parameter file so that
+# reviewers can see exactly what Bicep changes will be applied before merging.
+#
+# Triggers:
+#   - On every PR that touches infra/** or workflow files
+#   - On manual dispatch
+
+name: Plan – Staging
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'infra/**'
+      - '.github/workflows/plan-staging.yml'
+  workflow_dispatch:
+
+permissions:
+  id-token: write   # needed for OIDC login
+  contents: read
+  pull-requests: write  # allows posting what-if output as a PR comment
+
+jobs:
+  plan:
+    name: Bicep What-If (staging)
+    runs-on: ubuntu-latest
+    environment: staging
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Azure Login (OIDC)
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Bicep What-If
+        id: whatif
+        uses: azure/cli@v2
+        with:
+          azcliversion: latest
+          inlineScript: |
+            set -euo pipefail
+            RESULT=$(az deployment group what-if \
+              --resource-group "${{ vars.AZURE_RESOURCE_GROUP_STAGING }}" \
+              --template-file infra/main.bicep \
+              --parameters infra/parameters/staging.bicepparam \
+              --no-pretty-print \
+              --output json 2>&1 || true)
+            echo "whatif_output<<EOF" >> "$GITHUB_OUTPUT"
+            echo "$RESULT" >> "$GITHUB_OUTPUT"
+            echo "EOF" >> "$GITHUB_OUTPUT"
+
+      - name: Post What-If as PR comment
+        if: github.event_name == 'pull_request'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const output = `### 🔍 Bicep What-If — Staging
+
+            <details><summary>Expand diff</summary>
+
+            \`\`\`
+            ${{ steps.whatif.outputs.whatif_output }}
+            \`\`\`
+
+            </details>
+
+            *Triggered by @${{ github.actor }} — ${{ github.workflow }} #${{ github.run_number }}*`;
+
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: output
+            });
+
+      - name: Summary
+        run: |
+          echo "## Plan complete" >> "$GITHUB_STEP_SUMMARY"
+          echo "What-if ran against resource group: ${{ vars.AZURE_RESOURCE_GROUP_STAGING }}" >> "$GITHUB_STEP_SUMMARY"
+          echo "Review the PR comment or job log for the full diff." >> "$GITHUB_STEP_SUMMARY"

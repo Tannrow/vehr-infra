@@ -1,0 +1,131 @@
+# rollback-staging.yml
+# Redeploys a specific, previously-deployed image tag to the staging Container Apps.
+# Use this to revert a bad deployment without needing to re-push an image.
+#
+# Trigger: Manual only (workflow_dispatch)
+
+name: Rollback – Staging
+
+on:
+  workflow_dispatch:
+    inputs:
+      ui_image_tag:
+        description: 'UI image tag to roll back to (e.g. sha-abc1234)'
+        required: true
+      backend_image_tag:
+        description: 'Backend image tag to roll back to (e.g. sha-abc1234)'
+        required: true
+      reason:
+        description: 'Reason for rollback (for audit log)'
+        required: false
+        default: 'Manual rollback'
+
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  rollback:
+    name: Rollback (staging)
+    runs-on: ubuntu-latest
+    environment: staging
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Log rollback intent
+        run: |
+          echo "## 🔄 Rollback initiated" >> "$GITHUB_STEP_SUMMARY"
+          echo "- **Triggered by:** @${{ github.actor }}" >> "$GITHUB_STEP_SUMMARY"
+          echo "- **Reason:** ${{ github.event.inputs.reason }}" >> "$GITHUB_STEP_SUMMARY"
+          echo "- **UI tag:** \`${{ github.event.inputs.ui_image_tag }}\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "- **Backend tag:** \`${{ github.event.inputs.backend_image_tag }}\`" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Azure Login (OIDC)
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Resolve image references
+        id: tags
+        run: |
+          ACR_SERVER="${{ vars.ACR_LOGIN_SERVER_STAGING }}"
+          echo "ui_image=${ACR_SERVER}/revenue-ui:${{ github.event.inputs.ui_image_tag }}" >> "$GITHUB_OUTPUT"
+          echo "backend_image=${ACR_SERVER}/vehr:${{ github.event.inputs.backend_image_tag }}" >> "$GITHUB_OUTPUT"
+
+      - name: Bicep Rollback Deploy
+        uses: azure/cli@v2
+        with:
+          azcliversion: latest
+          inlineScript: |
+            set -euo pipefail
+            az deployment group create \
+              --resource-group "${{ vars.AZURE_RESOURCE_GROUP_STAGING }}" \
+              --template-file infra/main.bicep \
+              --parameters infra/parameters/staging.bicepparam \
+              --parameters uiImage="${{ steps.tags.outputs.ui_image }}" \
+              --parameters backendImage="${{ steps.tags.outputs.backend_image }}" \
+              --mode Incremental \
+              --name "rollback-staging-${{ github.run_number }}"
+
+      - name: Health check – UI
+        run: |
+          APP_NAME="${{ vars.UI_APP_NAME_STAGING || 'revenue-ui-staging' }}"
+          RG="${{ vars.AZURE_RESOURCE_GROUP_STAGING }}"
+          FQDN=$(az containerapp show \
+            --name "$APP_NAME" \
+            --resource-group "$RG" \
+            --query properties.configuration.ingress.fqdn \
+            --output tsv 2>/dev/null || true)
+          if [ -z "$FQDN" ]; then
+            echo "Could not resolve UI FQDN — skipping."
+            exit 0
+          fi
+          echo "Checking https://${FQDN}/..."
+          for i in $(seq 1 10); do
+            STATUS=$(curl -s -o /dev/null -w '%{http_code}' "https://${FQDN}/" || true)
+            echo "Attempt $i — HTTP $STATUS"
+            if [[ "$STATUS" == "200" || "$STATUS" == "301" || "$STATUS" == "302" ]]; then
+              echo "UI is healthy after rollback."
+              exit 0
+            fi
+            sleep 10
+          done
+          echo "::error::UI health check failed after rollback."
+          exit 1
+
+      - name: Health check – Backend
+        run: |
+          APP_NAME="${{ vars.BACKEND_APP_NAME_STAGING || 'vehr-api-staging' }}"
+          RG="${{ vars.AZURE_RESOURCE_GROUP_STAGING }}"
+          FQDN=$(az containerapp show \
+            --name "$APP_NAME" \
+            --resource-group "$RG" \
+            --query properties.configuration.ingress.fqdn \
+            --output tsv 2>/dev/null || true)
+          if [ -z "$FQDN" ]; then
+            echo "Could not resolve backend FQDN — skipping."
+            exit 0
+          fi
+          echo "Checking https://${FQDN}/health..."
+          for i in $(seq 1 10); do
+            STATUS=$(curl -s -o /dev/null -w '%{http_code}' "https://${FQDN}/health" || true)
+            echo "Attempt $i — HTTP $STATUS"
+            if [[ "$STATUS" == "200" ]]; then
+              echo "Backend is healthy after rollback."
+              exit 0
+            fi
+            sleep 10
+          done
+          echo "::error::Backend health check failed after rollback."
+          exit 1
+
+      - name: Summary
+        run: |
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "## ✅ Rollback complete" >> "$GITHUB_STEP_SUMMARY"
+          echo "- UI rolled back to: \`${{ steps.tags.outputs.ui_image }}\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Backend rolled back to: \`${{ steps.tags.outputs.backend_image }}\`" >> "$GITHUB_STEP_SUMMARY"
