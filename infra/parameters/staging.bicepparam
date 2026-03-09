@@ -74,8 +74,9 @@ param backendEnvVars = [
 // ⚠️  REQUIRED: Before deploying, you must:
 //   1. Create an Azure Key Vault and add the secrets listed below.
 //   2. Create a user-assigned managed identity and grant it "Key Vault Secrets User".
-//   3. Set KEY_VAULT_NAME_STAGING in the staging GitHub environment variables.
-//   4. Set MANAGED_IDENTITY_RESOURCE_ID_STAGING to the managed identity resource ID.
+//   3. Make KEY_VAULT_NAME_STAGING and MANAGED_IDENTITY_RESOURCE_ID_STAGING
+//      available to the deployment command. The GitHub workflows resolve them
+//      automatically from staging overrides or existing Azure resources.
 // See docs/SECRETS.md for the full setup guide.
 param backendSecrets = [
   {
@@ -87,6 +88,6 @@ param backendSecrets = [
 param uiSecrets = []
 
 // ── Managed identity ─────────────────────────────────────────────────────
-// ⚠️  REQUIRED if using Key Vault secrets: set MANAGED_IDENTITY_RESOURCE_ID_STAGING
-// in the staging GitHub environment variables.
+// ⚠️  REQUIRED if using Key Vault secrets: the deployment command must set
+// MANAGED_IDENTITY_RESOURCE_ID_STAGING before evaluating this parameter file.
 param managedIdentityId = managedIdentityResourceId

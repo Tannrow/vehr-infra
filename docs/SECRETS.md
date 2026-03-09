@@ -51,13 +51,18 @@ Variables are not sensitive; they are visible in workflow logs.
 |--------------------------------|----------------------------------------|----------------------------------------|
 | `AZURE_RESOURCE_GROUP_STAGING` | `rg-vehr-staging`                      | Resource group for staging deployments |
 | `ACR_LOGIN_SERVER_STAGING`     | `vehracrstaging.azurecr.io`            | ACR login server URL (staging)         |
-| `KEY_VAULT_NAME_STAGING`       | `vehr-kv-staging`                      | Key Vault name used by the staging app secrets |
-| `MANAGED_IDENTITY_RESOURCE_ID_STAGING` | `/subscriptions/<sub>/resourceGroups/<rg>/providers/Microsoft.ManagedIdentity/userAssignedIdentities/<name>` | User-assigned managed identity resource ID for staging Container Apps |
+| `KEY_VAULT_NAME_STAGING`       | `vehr-kv-staging`                      | Optional override for the Key Vault name used by the staging app secrets |
+| `MANAGED_IDENTITY_RESOURCE_ID_STAGING` | `/subscriptions/<sub>/resourceGroups/<rg>/providers/Microsoft.ManagedIdentity/userAssignedIdentities/<name>` | Optional override for the user-assigned managed identity resource ID used by staging Container Apps |
 | `UI_APP_NAME_STAGING`          | `revenue-ui-staging`                   | Container App name for the UI          |
 | `BACKEND_APP_NAME_STAGING`     | `vehr-api-staging`                     | Container App name for the backend     |
 
 For production, duplicate the above with `_PRODUCTION` suffixes (update the
 `apply-production` workflow when you create it).
+
+If the two staging override variables above are left unset, the staging workflows
+try to reuse the currently deployed backend app's Key Vault secret reference and
+managed identity, then fall back to the first Key Vault and user-assigned
+identity found in the staging resource group.
 
 ---
 
