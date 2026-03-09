@@ -60,7 +60,22 @@ jobs:
         with:
           azcliversion: latest
           inlineScript: |
-            set -euo pipefail
+            set -euxo pipefail
+
+            echo "Resource group: ${{ vars.AZURE_RESOURCE_GROUP_STAGING }}"
+            echo "Template file: infra/main.bicep"
+            echo "Parameters file: infra/parameters/staging.bicepparam"
+            echo "UI image: ${{ steps.tags.outputs.ui_image }}"
+            echo "Backend image: ${{ steps.tags.outputs.backend_image }}"
+
+            az deployment group validate \
+              --resource-group "${{ vars.AZURE_RESOURCE_GROUP_STAGING }}" \
+              --template-file infra/main.bicep \
+              --parameters infra/parameters/staging.bicepparam \
+              --parameters uiImage="${{ steps.tags.outputs.ui_image }}" \
+              --parameters backendImage="${{ steps.tags.outputs.backend_image }}" \
+              --output jsonc
+
             az deployment group create \
               --resource-group "${{ vars.AZURE_RESOURCE_GROUP_STAGING }}" \
               --template-file infra/main.bicep \
@@ -68,7 +83,8 @@ jobs:
               --parameters uiImage="${{ steps.tags.outputs.ui_image }}" \
               --parameters backendImage="${{ steps.tags.outputs.backend_image }}" \
               --mode Incremental \
-              --name "deploy-staging-${{ github.run_number }}"
+              --name "deploy-staging-${{ github.run_number }}" \
+              --output jsonc
 
       - name: Capture deployment outputs
         id: deployment
@@ -76,7 +92,7 @@ jobs:
         with:
           azcliversion: latest
           inlineScript: |
-            set -euo pipefail
+            set -euxo pipefail
 
             UI_FQDN=$(az deployment group show \
               --resource-group "${{ vars.AZURE_RESOURCE_GROUP_STAGING }}" \
