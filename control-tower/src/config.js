@@ -119,7 +119,7 @@ function defaultPlatformConfig() {
         recommended_action: 'Inspect API health, deployment revision, and PostgreSQL connectivity.'
       }),
       service('revenue-ui', 'Revenue UI', {
-        endpoint: endpoint(process.env.CONTROL_TOWER_REVENUE_UI_HEALTH_URL ?? uiBaseUrl, '/api/health'),
+        endpoint: endpoint(process.env.CONTROL_TOWER_REVENUE_UI_HEALTH_URL ?? uiBaseUrl, '/'),
         recommended_action: 'Validate UI ingress, frontend asset deployment, and API reachability.'
       }),
       service('auth-session-layer', 'Auth / session layer', {
