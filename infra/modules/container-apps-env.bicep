@@ -26,7 +26,7 @@ resource existingLogAnalytics 'Microsoft.OperationalInsights/workspaces@2022-10-
   name: effectiveLogAnalyticsWorkspaceName
 }
 
-resource logAnalytics 'Microsoft.OperationalInsights/workspaces@2022-10-01' = if (!useExistingLogAnalyticsWorkspace && !useExistingEnvironment) {
+resource logAnalytics 'Microsoft.OperationalInsights/workspaces@2022-10-01' = if (!useExistingLogAnalyticsWorkspace) {
   name: effectiveLogAnalyticsWorkspaceName
   location: location
   tags: tags

@@ -174,13 +174,17 @@ jobs:
           if [ -n "$UI_TAG" ]; then
             UI_IMAGE="${ACR_SERVER}/${UI_REPO}:${UI_TAG}"
           else
-            UI_IMAGE="$(resolve_live_image "$UI_APP_NAME" "$LEGACY_UI_APP_NAME" || true)"
+            if ! UI_IMAGE="$(resolve_live_image "$UI_APP_NAME" "$LEGACY_UI_APP_NAME")"; then
+              UI_IMAGE=""
+            fi
           fi
 
           if [ -n "$BACKEND_TAG" ]; then
             BACKEND_IMAGE="${ACR_SERVER}/${BACKEND_REPO}:${BACKEND_TAG}"
           else
-            BACKEND_IMAGE="$(resolve_live_image "$BACKEND_APP_NAME" "$LEGACY_BACKEND_APP_NAME" || true)"
+            if ! BACKEND_IMAGE="$(resolve_live_image "$BACKEND_APP_NAME" "$LEGACY_BACKEND_APP_NAME")"; then
+              BACKEND_IMAGE=""
+            fi
           fi
 
           if [ -z "$UI_IMAGE" ]; then
