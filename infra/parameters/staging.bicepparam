@@ -35,6 +35,8 @@ param logAnalyticsWorkspaceExists = true
 // ── App names ───────────────────────────────────────────────────────────────
 // Container Apps are region-bound, so the East US 2 deployment uses new,
 // unambiguous names instead of the legacy East US app identities.
+// Control Tower keeps its established service name prefix for consistency with
+// the existing app and workflow inputs.
 param uiAppName = 'vehr-revenue-ui-staging-eastus2'
 param backendAppName = 'vehr-revos-staging-eastus2'
 param controlTowerAppName = 'control-tower-staging-eastus2'
