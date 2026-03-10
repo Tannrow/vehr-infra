@@ -49,6 +49,50 @@ jobs:
           tenant-id: ${{ secrets.AZURE_TENANT_ID }}
           subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
 
+      - name: Resolve staging runtime config
+        uses: azure/cli@v2
+        with:
+          azcliversion: latest
+          inlineScript: |
+            set -euo pipefail
+            KEY_VAULT_NAME="${{ vars.KEY_VAULT_NAME_STAGING }}"
+            MANAGED_IDENTITY_RESOURCE_ID="${{ vars.MANAGED_IDENTITY_RESOURCE_ID_STAGING }}"
+            RESOURCE_GROUP="${{ vars.AZURE_RESOURCE_GROUP_STAGING }}"
+            BACKEND_APP="${{ vars.BACKEND_APP_NAME_STAGING || 'vehr-api-staging' }}"
+
+            if [ -z "$MANAGED_IDENTITY_RESOURCE_ID" ]; then
+              APP_IDENTITY=$(az containerapp show \
+                --name "$BACKEND_APP" \
+                --resource-group "$RESOURCE_GROUP" \
+                --query "join(',', keys(identity.userAssignedIdentities))" \
+                --output tsv 2>/dev/null || true)
+              MANAGED_IDENTITY_RESOURCE_ID="${APP_IDENTITY%%,*}"
+            fi
+
+            if [ -z "$MANAGED_IDENTITY_RESOURCE_ID" ]; then
+              MANAGED_IDENTITY_RESOURCE_ID=$(az identity list --resource-group "$RESOURCE_GROUP" --query "[0].id" --output tsv 2>/dev/null || true)
+            fi
+
+            if [ -z "$KEY_VAULT_NAME" ]; then
+              KEY_VAULT_URL=$(az containerapp show \
+                --name "$BACKEND_APP" \
+                --resource-group "$RESOURCE_GROUP" \
+                --query "properties.configuration.secrets[?keyVaultUrl!=null][0].keyVaultUrl" \
+                --output tsv 2>/dev/null || true)
+              if [ -n "$KEY_VAULT_URL" ]; then
+                KEY_VAULT_NAME=$(printf '%s' "$KEY_VAULT_URL" | sed -E 's#https://([^./]+).*#\\1#')
+              fi
+            fi
+
+            if [ -z "$KEY_VAULT_NAME" ]; then
+              KEY_VAULT_NAME=$(az keyvault list --resource-group "$RESOURCE_GROUP" --query "[0].name" --output tsv 2>/dev/null || true)
+            fi
+
+            {
+              echo "KEY_VAULT_NAME_STAGING=${KEY_VAULT_NAME}"
+              echo "MANAGED_IDENTITY_RESOURCE_ID_STAGING=${MANAGED_IDENTITY_RESOURCE_ID}"
+            } >> "$GITHUB_ENV"
+
       - name: Resolve image references
         id: tags
         run: |
@@ -59,8 +103,8 @@ jobs:
       - name: Bicep Rollback Deploy
         uses: azure/cli@v2
         env:
-          KEY_VAULT_NAME_STAGING: ${{ vars.KEY_VAULT_NAME_STAGING }}
-          MANAGED_IDENTITY_RESOURCE_ID_STAGING: ${{ vars.MANAGED_IDENTITY_RESOURCE_ID_STAGING }}
+          KEY_VAULT_NAME_STAGING: ${{ env.KEY_VAULT_NAME_STAGING }}
+          MANAGED_IDENTITY_RESOURCE_ID_STAGING: ${{ env.MANAGED_IDENTITY_RESOURCE_ID_STAGING }}
         with:
           azcliversion: latest
           inlineScript: |

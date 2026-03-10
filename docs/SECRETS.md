@@ -52,7 +52,7 @@ Variables are not sensitive; they are visible in workflow logs.
 | `AZURE_RESOURCE_GROUP_STAGING` | `rg-vehr-staging`                      | Resource group for staging deployments |
 | `ACR_LOGIN_SERVER_STAGING`     | `vehracrstaging.azurecr.io`            | ACR login server URL (staging)         |
 | `KEY_VAULT_NAME_STAGING`       | `vehr-kv-staging`                      | Optional Key Vault name for staging backend secrets; leave unset to skip Key Vault-backed secret wiring during plan/bootstrap |
-| `MANAGED_IDENTITY_RESOURCE_ID_STAGING` | `/subscriptions/<sub>/resourceGroups/<rg>/providers/Microsoft.ManagedIdentity/userAssignedIdentities/<name>` | Optional managed identity resource ID for staging backend secrets; leave unset to skip Key Vault-backed secret wiring during plan/bootstrap |
+| `MANAGED_IDENTITY_RESOURCE_ID_STAGING` | `/subscriptions/<sub>/resourceGroups/<rg>/providers/Microsoft.ManagedIdentity/userAssignedIdentities/<name>` | Optional managed identity resource ID for staging app ACR pulls and backend secrets; when unset the workflows now try to discover it from the deployed backend app or the first identity in the staging resource group |
 | `UI_APP_NAME_STAGING`          | `revenue-ui-staging`                   | Container App name for the UI          |
 | `BACKEND_APP_NAME_STAGING`     | `vehr-api-staging`                     | Container App name for the backend     |
 
@@ -63,6 +63,13 @@ If the two staging variables above are left unset, the staging Bicep parameters
 omit the backend Key Vault secret and managed identity wiring. That keeps
 planning/bootstrap workflows working, but a backend deployment that needs a
 database connection should set both variables.
+
+The staging workflows now also try to resolve missing
+`KEY_VAULT_NAME_STAGING` / `MANAGED_IDENTITY_RESOURCE_ID_STAGING` from the
+deployed backend Container App first, and then fall back to the first Key Vault
+or user-assigned identity in the staging resource group. That keeps plan,
+apply, and rollback resilient even when the GitHub environment variables are
+not populated yet.
 
 ---
 

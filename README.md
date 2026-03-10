@@ -27,7 +27,7 @@ Tannrow/VEHR        ──┘
 |------|------|
 | `Tannrow/revenue-ui` | React/Vite frontend — owns Dockerfile, app code, and image push workflow |
 | `Tannrow/VEHR` | .NET backend — owns Dockerfile, app code, and image push workflow |
-| `Tannrow/vehr-infra` *(this repo)* | Infrastructure as code — owns all Azure resource definitions and deployment workflows |
+| `Tannrow/vehr-infra` *(this repo)* | Infrastructure as code plus the VEHR Control Tower operations service |
 
 ### How to make changes
 
@@ -76,10 +76,14 @@ vehr-infra/
 │   ├── modules/
 │   │   ├── container-registry.bicep    # Azure Container Registry
 │   │   ├── container-apps-env.bicep    # Shared Container Apps Environment
-│   │   └── container-app.bicep         # Generic Container App (UI and backend)
+│   │   └── container-app.bicep         # Generic Container App (UI, backend, Control Tower)
 │   └── parameters/
 │       ├── staging.bicepparam     # Staging-specific values
 │       └── production.bicepparam  # Production-specific values
+├── control-tower/
+│   ├── src/                       # Control Tower API, diagnostics layer, event stream, and dashboard
+│   ├── test/                      # Focused node:test coverage for the control plane
+│   └── Dockerfile                 # Control Tower container image
 └── docs/
     └── SECRETS.md                 # Required secrets & least-privilege guide
 ```
@@ -115,6 +119,39 @@ az deployment group create \
    And add the corresponding entry to `backendSecrets`.
 3. Open a PR — `plan-staging` will show the diff.
 4. Merge — `apply-staging` will deploy.
+
+### VEHR Control Tower
+
+The repo now contains a self-contained operations service in
+[`control-tower/`](control-tower) that provides:
+
+- canonical health records for services, workers, pipelines, infrastructure, incidents, alerts, commands, and deployments
+- operator APIs under `/api/control/*`
+- an SSE event stream at `/api/control/events/stream`
+- a live operator dashboard at `/`
+- a safe command bus with validation, dry-run support, audit logging, and pluggable execution hooks
+- replaceable Azure/database/runtime adapters to support future AI-assisted operations
+
+#### Local run
+
+```bash
+cd control-tower
+npm test
+npm start
+```
+
+#### Optional Azure deployment
+
+Control Tower is wired into `infra/main.bicep`, but deployment is intentionally
+**optional by default** so existing staging/prod applies do not fail before an
+image is published. To deploy it:
+
+1. Build and push a `control-tower` image to your registry.
+2. Run **Apply – Staging** with `control_tower_image_tag`, or pass
+   `controlTowerImage=<registry>/control-tower:<tag>` via Azure CLI.
+3. After deployment, Control Tower auto-discovers the VEHR UI/backend FQDNs and
+   exposes live platform health, deployment state, incidents, alerts, and safe
+   recovery commands in one place.
 
 ### Adding a custom domain
 
