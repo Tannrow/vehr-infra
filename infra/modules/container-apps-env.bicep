@@ -58,7 +58,7 @@ resource containerAppsEnv 'Microsoft.App/managedEnvironments@2023-05-01' = if (!
 }
 
 @description('Resource ID of the managed environment')
-output resourceId string = useExistingEnvironment ? existingContainerAppsEnv.id : containerAppsEnv!.id
+output resourceId string = useExistingEnvironment ? existingContainerAppsEnv.id : containerAppsEnv.id
 
 @description('Name of the managed environment (for Container App references)')
-output name string = useExistingEnvironment ? existingContainerAppsEnv.name : containerAppsEnv!.name
+output name string = useExistingEnvironment ? existingContainerAppsEnv.name : containerAppsEnv.name
