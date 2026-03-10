@@ -89,6 +89,9 @@ jobs:
         id: tags
         env:
           ACR_SERVER: ${{ vars.ACR_LOGIN_SERVER_STAGING }}
+          RESOURCE_GROUP: ${{ vars.AZURE_RESOURCE_GROUP_STAGING }}
+          UI_APP_NAME: ${{ vars.UI_APP_NAME_STAGING || 'revenue-ui-staging' }}
+          BACKEND_APP_NAME: ${{ vars.BACKEND_APP_NAME_STAGING || 'vehr-api-staging' }}
           UI_IMAGE_REPOSITORY_STAGING: ${{ vars.UI_IMAGE_REPOSITORY_STAGING }}
           BACKEND_IMAGE_REPOSITORY_STAGING: ${{ vars.BACKEND_IMAGE_REPOSITORY_STAGING }}
           CONTROL_TOWER_IMAGE_REPOSITORY_STAGING: ${{ vars.CONTROL_TOWER_IMAGE_REPOSITORY_STAGING }}
@@ -99,12 +102,56 @@ jobs:
           BACKEND_REPO="${BACKEND_IMAGE_REPOSITORY_STAGING:-vehr}"
           CONTROL_TOWER_REPO="${CONTROL_TOWER_IMAGE_REPOSITORY_STAGING:-control-tower}"
 
-          UI_TAG="${{ github.event.inputs.ui_image_tag || github.event.client_payload.ui_image_tag || 'latest' }}"
-          BACKEND_TAG="${{ github.event.inputs.backend_image_tag || github.event.client_payload.backend_image_tag || 'latest' }}"
+          UI_TAG="${{ github.event.inputs.ui_image_tag || github.event.client_payload.ui_image_tag || '' }}"
+          BACKEND_TAG="${{ github.event.inputs.backend_image_tag || github.event.client_payload.backend_image_tag || '' }}"
           CONTROL_TOWER_TAG="${{ github.event.inputs.control_tower_image_tag || github.event.client_payload.control_tower_image_tag || '' }}"
 
-          echo "ui_image=${ACR_SERVER}/${UI_REPO}:${UI_TAG}" >> "$GITHUB_OUTPUT"
-          echo "backend_image=${ACR_SERVER}/${BACKEND_REPO}:${BACKEND_TAG}" >> "$GITHUB_OUTPUT"
+          if [ -n "$UI_TAG" ]; then
+            UI_IMAGE="${ACR_SERVER}/${UI_REPO}:${UI_TAG}"
+          else
+            UI_IMAGE=$(az containerapp show \
+              --name "$UI_APP_NAME" \
+              --resource-group "$RESOURCE_GROUP" \
+              --query "properties.template.containers[?name=='$UI_APP_NAME'] | [0].image" \
+              --output tsv 2>/dev/null || true)
+            if [ -z "$UI_IMAGE" ]; then
+              UI_IMAGE=$(az containerapp show \
+                --name "$UI_APP_NAME" \
+                --resource-group "$RESOURCE_GROUP" \
+                --query "properties.template.containers[0].image" \
+                --output tsv 2>/dev/null || true)
+            fi
+          fi
+
+          if [ -n "$BACKEND_TAG" ]; then
+            BACKEND_IMAGE="${ACR_SERVER}/${BACKEND_REPO}:${BACKEND_TAG}"
+          else
+            BACKEND_IMAGE=$(az containerapp show \
+              --name "$BACKEND_APP_NAME" \
+              --resource-group "$RESOURCE_GROUP" \
+              --query "properties.template.containers[?name=='$BACKEND_APP_NAME'] | [0].image" \
+              --output tsv 2>/dev/null || true)
+            if [ -z "$BACKEND_IMAGE" ]; then
+              BACKEND_IMAGE=$(az containerapp show \
+                --name "$BACKEND_APP_NAME" \
+                --resource-group "$RESOURCE_GROUP" \
+                --query "properties.template.containers[0].image" \
+                --output tsv 2>/dev/null || true)
+            fi
+          fi
+
+          if [ -z "$UI_IMAGE" ]; then
+            echo "::error::No UI image tag was provided and no existing UI image could be resolved from ${UI_APP_NAME} in resource group ${RESOURCE_GROUP}."
+            exit 1
+          fi
+
+          if [ -z "$BACKEND_IMAGE" ]; then
+            echo "::error::No backend image tag was provided and no existing backend image could be resolved from ${BACKEND_APP_NAME} in resource group ${RESOURCE_GROUP}."
+            exit 1
+          fi
+
+          echo "ui_image=${UI_IMAGE}" >> "$GITHUB_OUTPUT"
+          echo "backend_image=${BACKEND_IMAGE}" >> "$GITHUB_OUTPUT"
           if [ -n "$CONTROL_TOWER_TAG" ]; then
             echo "control_tower_image=${ACR_SERVER}/${CONTROL_TOWER_REPO}:${CONTROL_TOWER_TAG}" >> "$GITHUB_OUTPUT"
           else
