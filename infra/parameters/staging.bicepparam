@@ -26,23 +26,28 @@ param containerAppsEnvName = 'vehr-env-staging'
 // ── App names ───────────────────────────────────────────────────────────────
 param uiAppName = 'revenue-ui-staging'
 param backendAppName = 'vehr-api-staging'
+param controlTowerAppName = 'control-tower-staging'
 
 // ── Images — updated by the apply-staging workflow ─────────────────────────
 // Format: <acrLoginServer>/<repo>:<tag>
 param uiImage = 'vehracrstaging.azurecr.io/revenue-ui:latest'
 param backendImage = 'vehracrstaging.azurecr.io/vehr:latest'
+param controlTowerImage = ''
 
 // ── Ports ───────────────────────────────────────────────────────────────────
 param uiTargetPort = 80
 param backendTargetPort = 8080
+param controlTowerTargetPort = 3000
 
 // ── Scaling ─────────────────────────────────────────────────────────────────
 param uiMinReplicas = 0
 param backendMinReplicas = 0
+param controlTowerMinReplicas = 1
 
 // ── Custom domains (leave empty until certs are provisioned) ─────────────
 param uiCustomDomains = []
 param backendCustomDomains = []
+param controlTowerCustomDomains = []
 
 // ── Environment variables ───────────────────────────────────────────────────
 // Plain values only here; secrets use secretRef pointing to the secrets array below.
@@ -57,6 +62,13 @@ param uiEnvVars = [
     // or with your custom domain once configured.
     // Format: https://<backend-app-name>.<env-unique-id>.<region>.azurecontainerapps.io
     value: 'https://vehr-api-staging.<REPLACE_WITH_ENV_DEFAULT_DOMAIN>'
+  }
+]
+
+param controlTowerEnvVars = [
+  {
+    name: 'NODE_ENV'
+    value: 'production'
   }
 ]
 
@@ -87,7 +99,9 @@ param backendSecrets = hasBackendSecretConfig ? [
   }
 ] : []
 param uiSecrets = []
+param controlTowerSecrets = []
 
 // ── Managed identity ─────────────────────────────────────────────────────
-// Set MANAGED_IDENTITY_RESOURCE_ID_STAGING when the backend should use Key Vault/managed identity.
-param managedIdentityId = hasBackendSecretConfig ? managedIdentityResourceId : ''
+// Set MANAGED_IDENTITY_RESOURCE_ID_STAGING when staging apps should use ACR pull + managed identity.
+param managedIdentityId = managedIdentityResourceId
+param controlTowerManagedIdentityId = managedIdentityResourceId

@@ -16,6 +16,10 @@ on:
         description: 'Backend image tag to deploy (leave blank to keep current)'
         required: false
         default: ''
+      control_tower_image_tag:
+        description: 'Control Tower image tag to deploy (leave blank to skip Control Tower deployment)'
+        required: false
+        default: ''
   repository_dispatch:
     types: [deploy-staging]
 
@@ -37,29 +41,81 @@ jobs:
         with:
           creds: ${{ secrets.AZURE_CREDENTIALS }}
 
+      - name: Resolve staging runtime config
+        uses: azure/cli@v2
+        with:
+          azcliversion: latest
+          inlineScript: |
+            set -euo pipefail
+            KEY_VAULT_NAME="${{ vars.KEY_VAULT_NAME_STAGING }}"
+            MANAGED_IDENTITY_RESOURCE_ID="${{ vars.MANAGED_IDENTITY_RESOURCE_ID_STAGING }}"
+            RESOURCE_GROUP="${{ vars.AZURE_RESOURCE_GROUP_STAGING }}"
+            BACKEND_APP="${{ vars.BACKEND_APP_NAME_STAGING || 'vehr-api-staging' }}"
+
+            if [ -z "$MANAGED_IDENTITY_RESOURCE_ID" ]; then
+              APP_IDENTITY=$(az containerapp show \
+                --name "$BACKEND_APP" \
+                --resource-group "$RESOURCE_GROUP" \
+                --query "join(',', keys(identity.userAssignedIdentities))" \
+                --output tsv 2>/dev/null || true)
+              MANAGED_IDENTITY_RESOURCE_ID="${APP_IDENTITY%%,*}"
+            fi
+
+            if [ -z "$MANAGED_IDENTITY_RESOURCE_ID" ]; then
+              MANAGED_IDENTITY_RESOURCE_ID=$(az identity list --resource-group "$RESOURCE_GROUP" --query "[0].id" --output tsv 2>/dev/null || true)
+            fi
+
+            if [ -z "$KEY_VAULT_NAME" ]; then
+              KEY_VAULT_URL=$(az containerapp show \
+                --name "$BACKEND_APP" \
+                --resource-group "$RESOURCE_GROUP" \
+                --query "properties.configuration.secrets[?keyVaultUrl!=null][0].keyVaultUrl" \
+                --output tsv 2>/dev/null || true)
+              if [ -n "$KEY_VAULT_URL" ]; then
+                KEY_VAULT_NAME=$(printf '%s' "$KEY_VAULT_URL" | sed -E 's#https://([^./]+).*#\\1#')
+              fi
+            fi
+
+            if [ -z "$KEY_VAULT_NAME" ]; then
+              KEY_VAULT_NAME=$(az keyvault list --resource-group "$RESOURCE_GROUP" --query "[0].name" --output tsv 2>/dev/null || true)
+            fi
+
+            {
+              echo "KEY_VAULT_NAME_STAGING=${KEY_VAULT_NAME}"
+              echo "MANAGED_IDENTITY_RESOURCE_ID_STAGING=${MANAGED_IDENTITY_RESOURCE_ID}"
+            } >> "$GITHUB_ENV"
+
       - name: Resolve image tags
         id: tags
         env:
           ACR_SERVER: ${{ vars.ACR_LOGIN_SERVER_STAGING }}
           UI_IMAGE_REPOSITORY_STAGING: ${{ vars.UI_IMAGE_REPOSITORY_STAGING }}
           BACKEND_IMAGE_REPOSITORY_STAGING: ${{ vars.BACKEND_IMAGE_REPOSITORY_STAGING }}
+          CONTROL_TOWER_IMAGE_REPOSITORY_STAGING: ${{ vars.CONTROL_TOWER_IMAGE_REPOSITORY_STAGING }}
         run: |
           set -euo pipefail
 
           UI_REPO="${UI_IMAGE_REPOSITORY_STAGING:-vehr-revenue-ui}"
           BACKEND_REPO="${BACKEND_IMAGE_REPOSITORY_STAGING:-vehr}"
+          CONTROL_TOWER_REPO="${CONTROL_TOWER_IMAGE_REPOSITORY_STAGING:-control-tower}"
 
           UI_TAG="${{ github.event.inputs.ui_image_tag || github.event.client_payload.ui_image_tag || 'latest' }}"
           BACKEND_TAG="${{ github.event.inputs.backend_image_tag || github.event.client_payload.backend_image_tag || 'latest' }}"
+          CONTROL_TOWER_TAG="${{ github.event.inputs.control_tower_image_tag || github.event.client_payload.control_tower_image_tag || '' }}"
 
           echo "ui_image=${ACR_SERVER}/${UI_REPO}:${UI_TAG}" >> "$GITHUB_OUTPUT"
           echo "backend_image=${ACR_SERVER}/${BACKEND_REPO}:${BACKEND_TAG}" >> "$GITHUB_OUTPUT"
+          if [ -n "$CONTROL_TOWER_TAG" ]; then
+            echo "control_tower_image=${ACR_SERVER}/${CONTROL_TOWER_REPO}:${CONTROL_TOWER_TAG}" >> "$GITHUB_OUTPUT"
+          else
+            echo "control_tower_image=" >> "$GITHUB_OUTPUT"
+          fi
 
       - name: Bicep Deploy
         uses: azure/cli@v2
         env:
-          KEY_VAULT_NAME_STAGING: ${{ vars.KEY_VAULT_NAME_STAGING }}
-          MANAGED_IDENTITY_RESOURCE_ID_STAGING: ${{ vars.MANAGED_IDENTITY_RESOURCE_ID_STAGING }}
+          KEY_VAULT_NAME_STAGING: ${{ env.KEY_VAULT_NAME_STAGING }}
+          MANAGED_IDENTITY_RESOURCE_ID_STAGING: ${{ env.MANAGED_IDENTITY_RESOURCE_ID_STAGING }}
         with:
           azcliversion: latest
           inlineScript: |
@@ -70,6 +126,7 @@ jobs:
             echo "Parameters file: infra/parameters/staging.bicepparam"
             echo "UI image: ${{ steps.tags.outputs.ui_image }}"
             echo "Backend image: ${{ steps.tags.outputs.backend_image }}"
+            echo "Control Tower image: ${{ steps.tags.outputs.control_tower_image || 'skipped' }}"
 
             az deployment group validate \
               --resource-group "${{ vars.AZURE_RESOURCE_GROUP_STAGING }}" \
@@ -77,6 +134,7 @@ jobs:
               --parameters infra/parameters/staging.bicepparam \
               --parameters uiImage="${{ steps.tags.outputs.ui_image }}" \
               --parameters backendImage="${{ steps.tags.outputs.backend_image }}" \
+              --parameters controlTowerImage="${{ steps.tags.outputs.control_tower_image }}" \
               --output jsonc
 
             az deployment group create \
@@ -85,6 +143,7 @@ jobs:
               --parameters infra/parameters/staging.bicepparam \
               --parameters uiImage="${{ steps.tags.outputs.ui_image }}" \
               --parameters backendImage="${{ steps.tags.outputs.backend_image }}" \
+              --parameters controlTowerImage="${{ steps.tags.outputs.control_tower_image }}" \
               --mode Incremental \
               --name "deploy-staging-${{ github.run_number }}" \
               --output jsonc
@@ -109,8 +168,15 @@ jobs:
               --query "properties.outputs.backendFqdn.value" \
               --output tsv)
 
+            CONTROL_TOWER_FQDN=$(az deployment group show \
+              --resource-group "${{ vars.AZURE_RESOURCE_GROUP_STAGING }}" \
+              --name "deploy-staging-${{ github.run_number }}" \
+              --query "properties.outputs.controlTowerFqdn.value" \
+              --output tsv)
+
             echo "ui_fqdn=${UI_FQDN}" >> "$GITHUB_OUTPUT"
             echo "backend_fqdn=${BACKEND_FQDN}" >> "$GITHUB_OUTPUT"
+            echo "control_tower_fqdn=${CONTROL_TOWER_FQDN}" >> "$GITHUB_OUTPUT"
 
       - name: Health check – UI
         run: |
@@ -164,6 +230,28 @@ jobs:
           cat /tmp/backend-health.txt || true
           exit 1
 
+      - name: Health check – Control Tower
+        if: steps.deployment.outputs.control_tower_fqdn != ''
+        run: |
+          set -euo pipefail
+          FQDN="${{ steps.deployment.outputs.control_tower_fqdn }}"
+          URL="https://${FQDN}/api/health"
+          echo "Checking ${URL}..."
+
+          for i in $(seq 1 10); do
+            STATUS=$(curl -s -o /tmp/control-tower-health.txt -w '%{http_code}' --max-time 20 "$URL" || true)
+            echo "Attempt $i — HTTP $STATUS"
+            if [[ "$STATUS" == "200" ]]; then
+              echo "Control Tower is healthy."
+              exit 0
+            fi
+            sleep 10
+          done
+
+          echo "::error::Control Tower health check failed."
+          cat /tmp/control-tower-health.txt || true
+          exit 1
+
       - name: Summary
         run: |
           {
@@ -173,8 +261,14 @@ jobs:
             echo "| --- | --- |"
             echo "| UI | https://${{ steps.deployment.outputs.ui_fqdn }} |"
             echo "| Backend | https://${{ steps.deployment.outputs.backend_fqdn }} |"
+            if [ -n "${{ steps.deployment.outputs.control_tower_fqdn }}" ]; then
+              echo "| Control Tower | https://${{ steps.deployment.outputs.control_tower_fqdn }} |"
+            fi
             echo
             echo "Images deployed:"
             echo "- UI: \`${{ steps.tags.outputs.ui_image }}\`"
             echo "- Backend: \`${{ steps.tags.outputs.backend_image }}\`"
+            if [ -n "${{ steps.tags.outputs.control_tower_image }}" ]; then
+              echo "- Control Tower: \`${{ steps.tags.outputs.control_tower_image }}\`"
+            fi
           } >> "$GITHUB_STEP_SUMMARY"

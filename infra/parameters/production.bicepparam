@@ -21,18 +21,22 @@ param containerAppsEnvName = 'vehr-env-prod'
 // ── App names ───────────────────────────────────────────────────────────────
 param uiAppName = 'revenue-ui'
 param backendAppName = 'vehr-api'
+param controlTowerAppName = 'control-tower'
 
 // ── Images — updated by the apply-production workflow ──────────────────────
 param uiImage = 'vehracrprod.azurecr.io/revenue-ui:latest'
 param backendImage = 'vehracrprod.azurecr.io/vehr:latest'
+param controlTowerImage = ''
 
 // ── Ports ───────────────────────────────────────────────────────────────────
 param uiTargetPort = 80
 param backendTargetPort = 8080
+param controlTowerTargetPort = 3000
 
 // ── Scaling ─────────────────────────────────────────────────────────────────
 param uiMinReplicas = 1
 param backendMinReplicas = 1
+param controlTowerMinReplicas = 1
 
 // ── Custom domains ──────────────────────────────────────────────────────────
 param uiCustomDomains = [
@@ -42,6 +46,7 @@ param uiCustomDomains = [
   // }
 ]
 param backendCustomDomains = []
+param controlTowerCustomDomains = []
 
 // ── Environment variables ───────────────────────────────────────────────────
 param uiEnvVars = [
@@ -52,6 +57,13 @@ param uiEnvVars = [
   {
     name: 'VITE_API_URL'
     value: 'https://api.yourdomain.com'
+  }
+]
+
+param controlTowerEnvVars = [
+  {
+    name: 'NODE_ENV'
+    value: 'production'
   }
 ]
 
@@ -83,9 +95,11 @@ param backendSecrets = [
   }
 ]
 param uiSecrets = []
+param controlTowerSecrets = []
 
 // ── Managed identity ─────────────────────────────────────────────────────
 // ⚠️  REQUIRED if using Key Vault secrets: replace with the resource ID of your
 // user-assigned managed identity.
 // e.g. /subscriptions/<sub>/resourceGroups/<rg>/providers/Microsoft.ManagedIdentity/userAssignedIdentities/<name>
 param managedIdentityId = '<MANAGED_IDENTITY_RESOURCE_ID>'
+param controlTowerManagedIdentityId = '<MANAGED_IDENTITY_RESOURCE_ID>'
