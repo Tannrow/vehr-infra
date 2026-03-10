@@ -237,7 +237,7 @@ module controlTowerApp 'modules/container-app.bicep' = if (shouldDeployControlTo
             }
             {
               component_id: 'revenue-ui'
-              endpoint: 'https://${uiApp.outputs.fqdn}/api/health'
+              endpoint: 'https://${uiApp.outputs.fqdn}/'
               metadata: {
                 app_name: uiAppName
               }

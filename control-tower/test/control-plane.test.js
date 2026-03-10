@@ -189,3 +189,32 @@ test('default staging deployment app names target the East US 2 staging apps', (
     }
   }
 });
+
+test('default revenue UI health endpoint falls back to the UI root route', () => {
+  const originalRevenueUiUrl = process.env.CONTROL_TOWER_REVENUE_UI_URL;
+  const originalRevenueUiHealthUrl = process.env.CONTROL_TOWER_REVENUE_UI_HEALTH_URL;
+
+  process.env.CONTROL_TOWER_REVENUE_UI_URL = 'vehr-ui.internal';
+  delete process.env.CONTROL_TOWER_REVENUE_UI_HEALTH_URL;
+
+  try {
+    const config = loadConfig();
+
+    assert.equal(
+      config.services.find((service) => service.component_id === 'revenue-ui')?.endpoint,
+      'vehr-ui.internal/'
+    );
+  } finally {
+    if (originalRevenueUiUrl === undefined) {
+      delete process.env.CONTROL_TOWER_REVENUE_UI_URL;
+    } else {
+      process.env.CONTROL_TOWER_REVENUE_UI_URL = originalRevenueUiUrl;
+    }
+
+    if (originalRevenueUiHealthUrl === undefined) {
+      delete process.env.CONTROL_TOWER_REVENUE_UI_HEALTH_URL;
+    } else {
+      process.env.CONTROL_TOWER_REVENUE_UI_HEALTH_URL = originalRevenueUiHealthUrl;
+    }
+  }
+});

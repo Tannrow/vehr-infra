@@ -283,29 +283,117 @@ jobs:
             echo "control_tower_fqdn=${CONTROL_TOWER_FQDN}" >> "$GITHUB_OUTPUT"
 
       - name: Health check – UI
+        env:
+          UI_APP_NAME: ${{ vars.UI_APP_NAME_STAGING || 'vehr-revenue-ui-staging-eastus2' }}
+          RESOURCE_GROUP: ${{ vars.AZURE_RESOURCE_GROUP_STAGING }}
         run: |
           set -euo pipefail
-          FQDN="${{ steps.deployment.outputs.ui_fqdn }}"
+          DEPLOYMENT_FQDN="${{ steps.deployment.outputs.ui_fqdn }}"
+          LIVE_FQDN=$(az containerapp show \
+            --name "$UI_APP_NAME" \
+            --resource-group "$RESOURCE_GROUP" \
+            --query properties.configuration.ingress.fqdn \
+            --output tsv 2>/dev/null || true)
+
+          FQDN="$LIVE_FQDN"
           if [ -z "$FQDN" ]; then
-            echo "::error::No UI FQDN returned from deployment outputs."
+            FQDN="$DEPLOYMENT_FQDN"
+          fi
+
+          if [ -z "$FQDN" ]; then
+            echo "::error::Could not resolve a UI FQDN from either the live Container App or the deployment outputs."
             exit 1
           fi
 
-          URL="https://${FQDN}/api/health"
-          echo "Checking ${URL}..."
+          echo "UI app name: ${UI_APP_NAME}"
+          echo "Deployment output UI FQDN: ${DEPLOYMENT_FQDN:-<empty>}"
+          echo "Live UI FQDN: ${LIVE_FQDN:-<empty>}"
+          if [ -n "$LIVE_FQDN" ] && [ -n "$DEPLOYMENT_FQDN" ] && [ "$LIVE_FQDN" != "$DEPLOYMENT_FQDN" ]; then
+            echo "::warning::Using live Container App FQDN because it differs from the deployment output."
+          fi
 
-          for i in $(seq 1 10); do
-            STATUS=$(curl -s -o /tmp/ui-health.txt -w '%{http_code}' --max-time 20 "$URL" || true)
-            echo "Attempt $i — HTTP $STATUS"
-            if [[ "$STATUS" == "200" ]]; then
-              echo "UI is healthy."
-              exit 0
+          URL="https://${FQDN}/"
+          echo "Checking ${URL}"
+
+          BACKOFF_SECONDS=5
+          ACCEPTABLE_STATUSES="200 301 302 307 308"
+          PYTHON_BIN="$(command -v python3 || command -v python || true)"
+          if [ -z "$PYTHON_BIN" ]; then
+            echo "::error::Python is required to perform the UI DNS readiness check."
+            exit 1
+          fi
+
+          DNS_READY=false
+          for i in $(seq 1 12); do
+            set +e
+            DNS_ERROR=$("$PYTHON_BIN" -c "import socket, sys; socket.getaddrinfo(sys.argv[1], None)" "$FQDN" 2>&1)
+            DNS_STATUS=$?
+            set -e
+
+            if [ "$DNS_STATUS" -eq 0 ]; then
+              DNS_READY=true
+              echo "DNS resolved for ${FQDN} on attempt ${i}."
+              break
             fi
-            sleep 10
+
+            if [ "$i" -eq 12 ] && [ -n "$DNS_ERROR" ]; then
+              echo "Final DNS lookup error:"
+              echo "$DNS_ERROR"
+            fi
+
+            WAIT_SECONDS=$((i * BACKOFF_SECONDS))
+            echo "DNS not ready for ${FQDN} on attempt ${i}; waiting ${WAIT_SECONDS}s before retrying."
+            sleep "$WAIT_SECONDS"
           done
 
-          echo "::error::UI health check failed."
-          cat /tmp/ui-health.txt || true
+          if [ "$DNS_READY" != "true" ]; then
+            echo "::error::UI host ${FQDN} did not resolve after waiting for DNS propagation."
+            exit 1
+          fi
+
+          RESPONSE_BODY=$(mktemp)
+          CURL_STDERR=$(mktemp)
+          trap 'rm -f "$RESPONSE_BODY" "$CURL_STDERR"' EXIT
+
+          for i in $(seq 1 10); do
+            > "$RESPONSE_BODY"
+            > "$CURL_STDERR"
+
+            set +e
+            # The UI root can legitimately redirect (for example to an auth entrypoint),
+            # so treat a redirect status as proof that the deployed UI ingress is live.
+            STATUS=$(curl --silent --show-error \
+              --output "$RESPONSE_BODY" \
+              --write-out '%{http_code}' \
+              --max-time 20 \
+              "$URL" 2>"$CURL_STDERR")
+            CURL_EXIT=$?
+            set -e
+
+            echo "Attempt $i — curl exit ${CURL_EXIT}, HTTP ${STATUS}"
+            if [ -s "$CURL_STDERR" ]; then
+              cat "$CURL_STDERR"
+            fi
+
+            if [ "$CURL_EXIT" -eq 0 ] && printf '%s\n' $ACCEPTABLE_STATUSES | grep -Fxq "$STATUS"; then
+              echo "UI is reachable."
+              exit 0
+            fi
+
+            WAIT_SECONDS=$((i * BACKOFF_SECONDS))
+            echo "UI not ready yet; waiting ${WAIT_SECONDS}s before retrying."
+            sleep "$WAIT_SECONDS"
+          done
+
+          echo "::error::UI health check failed for ${URL}."
+          if [ -s "$CURL_STDERR" ]; then
+            echo "Last curl error output:"
+            cat "$CURL_STDERR"
+          fi
+          if [ -s "$RESPONSE_BODY" ]; then
+            echo "Last response body:"
+            cat "$RESPONSE_BODY"
+          fi
           exit 1
 
       - name: Health check – Backend
