@@ -13,7 +13,10 @@ var managedIdentityResourceId = readEnvironmentVariable('MANAGED_IDENTITY_RESOUR
 var hasBackendSecretConfig = !empty(keyVaultName) && !empty(managedIdentityResourceId)
 
 param environment = 'staging'
-param location = 'eastus2'
+// The long-lived staging Container Apps environment already exists in East US,
+// so all staging resources must keep that location to avoid
+// InvalidResourceLocation validation failures during apply.
+param location = 'eastus'
 
 // ── Container Registry ──────────────────────────────────────────────────────
 // Reuse the legacy staging registry that already exists in East US.
@@ -23,8 +26,8 @@ param acrExists = true
 
 // ── Container Apps Environment ──────────────────────────────────────────────
 param containerAppsEnvName = 'vehr-env-staging'
-// Reuse the legacy staging workspace so the new East US 2 environment does not
-// attempt to recreate an East US resource with the same name.
+// Reuse the legacy staging workspace that backs the existing East US staging
+// Container Apps environment.
 param logAnalyticsWorkspaceName = 'vehr-env-staging-logs'
 param logAnalyticsWorkspaceExists = true
 

@@ -1,0 +1,118 @@
+{
+  "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentParameters.json#",
+  "contentVersion": "1.0.0.0",
+  "parameters": {
+    "environment": {
+      "value": "staging"
+    },
+    "location": {
+      "value": "eastus"
+    },
+    "acrName": {
+      "value": "vehrrevostagingacr"
+    },
+    "acrSku": {
+      "value": "Basic"
+    },
+    "acrExists": {
+      "value": true
+    },
+    "containerAppsEnvName": {
+      "value": "vehr-env-staging"
+    },
+    "logAnalyticsWorkspaceName": {
+      "value": "vehr-env-staging-logs"
+    },
+    "logAnalyticsWorkspaceExists": {
+      "value": true
+    },
+    "uiAppName": {
+      "value": "vehr-revenue-ui-staging-eus2"
+    },
+    "backendAppName": {
+      "value": "vehr-revos-staging-eus2"
+    },
+    "controlTowerAppName": {
+      "value": "control-tower-staging"
+    },
+    "uiImage": {
+      "value": "vehrrevostagingacr.azurecr.io/vehr-revenue-ui:latest"
+    },
+    "backendImage": {
+      "value": "vehrrevostagingacr.azurecr.io/vehr:latest"
+    },
+    "controlTowerImage": {
+      "value": ""
+    },
+    "uiTargetPort": {
+      "value": 80
+    },
+    "backendTargetPort": {
+      "value": 8080
+    },
+    "controlTowerTargetPort": {
+      "value": 3000
+    },
+    "uiMinReplicas": {
+      "value": 0
+    },
+    "backendMinReplicas": {
+      "value": 0
+    },
+    "controlTowerMinReplicas": {
+      "value": 1
+    },
+    "uiCustomDomains": {
+      "value": []
+    },
+    "backendCustomDomains": {
+      "value": []
+    },
+    "controlTowerCustomDomains": {
+      "value": []
+    },
+    "uiEnvVars": {
+      "value": [
+        {
+          "name": "NODE_ENV",
+          "value": "production"
+        },
+        {
+          "name": "VITE_API_URL",
+          "value": "https://vehr-revos-staging-eus2.<REPLACE_WITH_ENV_DEFAULT_DOMAIN>"
+        }
+      ]
+    },
+    "controlTowerEnvVars": {
+      "value": [
+        {
+          "name": "NODE_ENV",
+          "value": "production"
+        }
+      ]
+    },
+    "backendEnvVars": {
+      "value": [
+        {
+          "name": "ASPNETCORE_ENVIRONMENT",
+          "value": "Staging"
+        }
+      ]
+    },
+    "backendSecrets": {
+      "value": []
+    },
+    "uiSecrets": {
+      "value": []
+    },
+    "controlTowerSecrets": {
+      "value": []
+    },
+    "managedIdentityId": {
+      "value": ""
+    },
+    "controlTowerManagedIdentityId": {
+      "value": ""
+    }
+  }
+}
