@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { ControlPlaneService } from '../src/control-plane.js';
+import { loadConfig } from '../src/config.js';
 import { SEVERITIES, STATUSES } from '../src/model.js';
 
 class StubServiceProbeAdapter {
@@ -154,4 +155,37 @@ test('command validation and execution enforce operator attribution and auditabi
 
   assert.equal(result.status, 'completed');
   assert.equal(result.audit.operator, 'ops@example.com');
+});
+
+test('default staging deployment app names target the live EUS2 apps', () => {
+  const originalRevenueUiAppName = process.env.CONTROL_TOWER_REVENUE_UI_APP_NAME;
+  const originalBackendAppName = process.env.CONTROL_TOWER_BACKEND_APP_NAME;
+
+  delete process.env.CONTROL_TOWER_REVENUE_UI_APP_NAME;
+  delete process.env.CONTROL_TOWER_BACKEND_APP_NAME;
+
+  try {
+    const config = loadConfig();
+
+    assert.equal(
+      config.deployments.find((deployment) => deployment.service === 'revenue-ui')?.app_name,
+      'vehr-revenue-ui-staging-eus2'
+    );
+    assert.equal(
+      config.deployments.find((deployment) => deployment.service === 'vehr-backend-api')?.app_name,
+      'vehr-revos-staging-eus2'
+    );
+  } finally {
+    if (originalRevenueUiAppName === undefined) {
+      delete process.env.CONTROL_TOWER_REVENUE_UI_APP_NAME;
+    } else {
+      process.env.CONTROL_TOWER_REVENUE_UI_APP_NAME = originalRevenueUiAppName;
+    }
+
+    if (originalBackendAppName === undefined) {
+      delete process.env.CONTROL_TOWER_BACKEND_APP_NAME;
+    } else {
+      process.env.CONTROL_TOWER_BACKEND_APP_NAME = originalBackendAppName;
+    }
+  }
 });

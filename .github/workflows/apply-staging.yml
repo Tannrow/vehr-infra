@@ -50,7 +50,7 @@ jobs:
             KEY_VAULT_NAME="${{ vars.KEY_VAULT_NAME_STAGING }}"
             MANAGED_IDENTITY_RESOURCE_ID="${{ vars.MANAGED_IDENTITY_RESOURCE_ID_STAGING }}"
             RESOURCE_GROUP="${{ vars.AZURE_RESOURCE_GROUP_STAGING }}"
-            BACKEND_APP="${{ vars.BACKEND_APP_NAME_STAGING || 'vehr-api-staging' }}"
+            BACKEND_APP="${{ vars.BACKEND_APP_NAME_STAGING || 'vehr-revos-staging-eus2' }}"
 
             if [ -z "$MANAGED_IDENTITY_RESOURCE_ID" ]; then
               APP_IDENTITY=$(az containerapp show \
@@ -90,8 +90,8 @@ jobs:
         env:
           ACR_SERVER: ${{ vars.ACR_LOGIN_SERVER_STAGING }}
           RESOURCE_GROUP: ${{ vars.AZURE_RESOURCE_GROUP_STAGING }}
-          UI_APP_NAME: ${{ vars.UI_APP_NAME_STAGING || 'revenue-ui-staging' }}
-          BACKEND_APP_NAME: ${{ vars.BACKEND_APP_NAME_STAGING || 'vehr-api-staging' }}
+          UI_APP_NAME: ${{ vars.UI_APP_NAME_STAGING || 'vehr-revenue-ui-staging-eus2' }}
+          BACKEND_APP_NAME: ${{ vars.BACKEND_APP_NAME_STAGING || 'vehr-revos-staging-eus2' }}
           UI_IMAGE_REPOSITORY_STAGING: ${{ vars.UI_IMAGE_REPOSITORY_STAGING }}
           BACKEND_IMAGE_REPOSITORY_STAGING: ${{ vars.BACKEND_IMAGE_REPOSITORY_STAGING }}
           CONTROL_TOWER_IMAGE_REPOSITORY_STAGING: ${{ vars.CONTROL_TOWER_IMAGE_REPOSITORY_STAGING }}
@@ -106,50 +106,51 @@ jobs:
           BACKEND_TAG="${{ github.event.inputs.backend_image_tag || github.event.client_payload.backend_image_tag || '' }}"
           CONTROL_TOWER_TAG="${{ github.event.inputs.control_tower_image_tag || github.event.client_payload.control_tower_image_tag || '' }}"
 
-          if [ -n "$UI_TAG" ]; then
-            UI_IMAGE="${ACR_SERVER}/${UI_REPO}:${UI_TAG}"
-          else
-            UI_IMAGE=$(az containerapp show \
-              --name "$UI_APP_NAME" \
+          resolve_live_image() {
+            local app_name="$1"
+            local image
+
+            image=$(az containerapp show \
+              --name "$app_name" \
               --resource-group "$RESOURCE_GROUP" \
-              --query "properties.template.containers[?name=='$UI_APP_NAME'] | [0].image" \
+              --query "properties.template.containers[?name=='$app_name'] | [0].image" \
               --output tsv 2>/dev/null || true)
-            if [ -z "$UI_IMAGE" ]; then
-              UI_IMAGE=$(az containerapp show \
-                --name "$UI_APP_NAME" \
+
+            if [ -z "$image" ]; then
+              image=$(az containerapp show \
+                --name "$app_name" \
                 --resource-group "$RESOURCE_GROUP" \
                 --query "properties.template.containers[0].image" \
                 --output tsv 2>/dev/null || true)
             fi
+
+            printf '%s' "$image"
+          }
+
+          if [ -n "$UI_TAG" ]; then
+            UI_IMAGE="${ACR_SERVER}/${UI_REPO}:${UI_TAG}"
+          else
+            UI_IMAGE="$(resolve_live_image "$UI_APP_NAME")"
           fi
 
           if [ -n "$BACKEND_TAG" ]; then
             BACKEND_IMAGE="${ACR_SERVER}/${BACKEND_REPO}:${BACKEND_TAG}"
           else
-            BACKEND_IMAGE=$(az containerapp show \
-              --name "$BACKEND_APP_NAME" \
-              --resource-group "$RESOURCE_GROUP" \
-              --query "properties.template.containers[?name=='$BACKEND_APP_NAME'] | [0].image" \
-              --output tsv 2>/dev/null || true)
-            if [ -z "$BACKEND_IMAGE" ]; then
-              BACKEND_IMAGE=$(az containerapp show \
-                --name "$BACKEND_APP_NAME" \
-                --resource-group "$RESOURCE_GROUP" \
-                --query "properties.template.containers[0].image" \
-                --output tsv 2>/dev/null || true)
-            fi
+            BACKEND_IMAGE="$(resolve_live_image "$BACKEND_APP_NAME")"
           fi
 
           if [ -z "$UI_IMAGE" ]; then
-            echo "::error::No UI image tag was provided and no existing UI image could be resolved from ${UI_APP_NAME} in resource group ${RESOURCE_GROUP}."
+            echo "::error::Unable to resolve the staging UI image. Provide ui_image_tag explicitly or ensure Container App ${UI_APP_NAME} exists in ${RESOURCE_GROUP} with a deployed image."
             exit 1
           fi
 
           if [ -z "$BACKEND_IMAGE" ]; then
-            echo "::error::No backend image tag was provided and no existing backend image could be resolved from ${BACKEND_APP_NAME} in resource group ${RESOURCE_GROUP}."
+            echo "::error::Unable to resolve the staging backend image. Provide backend_image_tag explicitly or ensure Container App ${BACKEND_APP_NAME} exists in ${RESOURCE_GROUP} with a deployed image."
             exit 1
           fi
 
+          echo "ui_app_name=${UI_APP_NAME}" >> "$GITHUB_OUTPUT"
+          echo "backend_app_name=${BACKEND_APP_NAME}" >> "$GITHUB_OUTPUT"
           echo "ui_image=${UI_IMAGE}" >> "$GITHUB_OUTPUT"
           echo "backend_image=${BACKEND_IMAGE}" >> "$GITHUB_OUTPUT"
           if [ -n "$CONTROL_TOWER_TAG" ]; then
@@ -157,6 +158,13 @@ jobs:
           else
             echo "control_tower_image=" >> "$GITHUB_OUTPUT"
           fi
+
+      - name: Validate resolved staging deployment inputs
+        run: |
+          echo "Resolved UI app name: ${{ steps.tags.outputs.ui_app_name }}"
+          echo "Resolved backend app name: ${{ steps.tags.outputs.backend_app_name }}"
+          echo "Resolved UI image: ${{ steps.tags.outputs.ui_image }}"
+          echo "Resolved backend image: ${{ steps.tags.outputs.backend_image }}"
 
       - name: Bicep Deploy
         uses: azure/cli@v2

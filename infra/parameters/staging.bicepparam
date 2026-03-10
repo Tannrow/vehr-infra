@@ -13,25 +13,25 @@ var managedIdentityResourceId = readEnvironmentVariable('MANAGED_IDENTITY_RESOUR
 var hasBackendSecretConfig = !empty(keyVaultName) && !empty(managedIdentityResourceId)
 
 param environment = 'staging'
-param location = 'eastus'
+param location = 'eastus2'
 
 // ── Container Registry ──────────────────────────────────────────────────────
 // Reuse an existing registry name if one is already established in Azure.
-param acrName = 'vehracrstaging'
+param acrName = 'vehrrevostagingacr'
 param acrSku = 'Basic'
 
 // ── Container Apps Environment ──────────────────────────────────────────────
 param containerAppsEnvName = 'vehr-env-staging'
 
 // ── App names ───────────────────────────────────────────────────────────────
-param uiAppName = 'revenue-ui-staging'
-param backendAppName = 'vehr-api-staging'
+param uiAppName = 'vehr-revenue-ui-staging-eus2'
+param backendAppName = 'vehr-revos-staging-eus2'
 param controlTowerAppName = 'control-tower-staging'
 
 // ── Images — updated by the apply-staging workflow ─────────────────────────
 // Format: <acrLoginServer>/<repo>:<tag>
-param uiImage = 'vehracrstaging.azurecr.io/revenue-ui:latest'
-param backendImage = 'vehracrstaging.azurecr.io/vehr:latest'
+param uiImage = 'vehrrevostagingacr.azurecr.io/vehr-revenue-ui:latest'
+param backendImage = 'vehrrevostagingacr.azurecr.io/vehr:latest'
 param controlTowerImage = ''
 
 // ── Ports ───────────────────────────────────────────────────────────────────
@@ -61,7 +61,7 @@ param uiEnvVars = [
     // Replace with your Container Apps environment default domain from Azure Portal,
     // or with your custom domain once configured.
     // Format: https://<backend-app-name>.<env-unique-id>.<region>.azurecontainerapps.io
-    value: 'https://vehr-api-staging.<REPLACE_WITH_ENV_DEFAULT_DOMAIN>'
+    value: 'https://vehr-revos-staging-eus2.<REPLACE_WITH_ENV_DEFAULT_DOMAIN>'
   }
 ]
 

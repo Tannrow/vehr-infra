@@ -49,12 +49,12 @@ Variables are not sensitive; they are visible in workflow logs.
 
 | Variable name                  | Example value                          | Description                            |
 |--------------------------------|----------------------------------------|----------------------------------------|
-| `AZURE_RESOURCE_GROUP_STAGING` | `rg-vehr-staging`                      | Resource group for staging deployments |
-| `ACR_LOGIN_SERVER_STAGING`     | `vehracrstaging.azurecr.io`            | ACR login server URL (staging)         |
+| `AZURE_RESOURCE_GROUP_STAGING` | `vehr-revos-staging-rg`                | Resource group for staging deployments |
+| `ACR_LOGIN_SERVER_STAGING`     | `vehrrevostagingacr.azurecr.io`        | ACR login server URL (staging)         |
 | `KEY_VAULT_NAME_STAGING`       | `vehr-kv-staging`                      | Optional Key Vault name for staging backend secrets; leave unset to skip Key Vault-backed secret wiring during plan/bootstrap |
 | `MANAGED_IDENTITY_RESOURCE_ID_STAGING` | `/subscriptions/<sub>/resourceGroups/<rg>/providers/Microsoft.ManagedIdentity/userAssignedIdentities/<name>` | Optional managed identity resource ID for staging app ACR pulls and backend secrets; when unset the workflows now try to discover it from the deployed backend app or the first identity in the staging resource group |
-| `UI_APP_NAME_STAGING`          | `revenue-ui-staging`                   | Container App name for the UI          |
-| `BACKEND_APP_NAME_STAGING`     | `vehr-api-staging`                     | Container App name for the backend     |
+| `UI_APP_NAME_STAGING`          | `vehr-revenue-ui-staging-eus2`         | Container App name for the UI          |
+| `BACKEND_APP_NAME_STAGING`     | `vehr-revos-staging-eus2`              | Container App name for the backend     |
 
 For production, duplicate the above with `_PRODUCTION` suffixes (update the
 `apply-production` workflow when you create it).
@@ -93,7 +93,7 @@ and trigger deployments here.
 | `AZURE_CLIENT_ID`                  | Same OIDC app registration (or a separate one with `AcrPush` + no broader scope) |
 | `AZURE_TENANT_ID`                  | Same tenant                                                                 |
 | `AZURE_SUBSCRIPTION_ID`            | Same subscription                                                           |
-| `ACR_LOGIN_SERVER`                 | e.g. `vehracrstaging.azurecr.io`                                           |
+| `ACR_LOGIN_SERVER`                 | e.g. `vehrrevostagingacr.azurecr.io`                                       |
 | `INFRA_REPO_PAT` *(optional)*      | A fine-grained PAT with `workflow` scope on `vehr-infra`, used to trigger `repository_dispatch` and invoke the apply-staging workflow after a push |
 
 ---

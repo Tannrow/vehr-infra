@@ -44,7 +44,7 @@ jobs:
             KEY_VAULT_NAME="${{ vars.KEY_VAULT_NAME_STAGING }}"
             MANAGED_IDENTITY_RESOURCE_ID="${{ vars.MANAGED_IDENTITY_RESOURCE_ID_STAGING }}"
             RESOURCE_GROUP="${{ vars.AZURE_RESOURCE_GROUP_STAGING }}"
-            BACKEND_APP="${{ vars.BACKEND_APP_NAME_STAGING || 'vehr-api-staging' }}"
+            BACKEND_APP="${{ vars.BACKEND_APP_NAME_STAGING || 'vehr-revos-staging-eus2' }}"
 
             if [ -z "$MANAGED_IDENTITY_RESOURCE_ID" ]; then
               APP_IDENTITY=$(az containerapp show \

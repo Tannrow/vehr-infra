@@ -211,7 +211,7 @@ function defaultPlatformConfig() {
     deployments: [
       {
         service: 'revenue-ui',
-        app_name: process.env.CONTROL_TOWER_REVENUE_UI_APP_NAME ?? 'revenue-ui-staging',
+        app_name: process.env.CONTROL_TOWER_REVENUE_UI_APP_NAME ?? 'vehr-revenue-ui-staging-eus2',
         revision: 'unknown',
         environment: 'staging',
         health_verification: 'unknown',
@@ -220,7 +220,7 @@ function defaultPlatformConfig() {
       },
       {
         service: 'vehr-backend-api',
-        app_name: process.env.CONTROL_TOWER_BACKEND_APP_NAME ?? 'vehr-api-staging',
+        app_name: process.env.CONTROL_TOWER_BACKEND_APP_NAME ?? 'vehr-revos-staging-eus2',
         revision: 'unknown',
         environment: 'staging',
         health_verification: 'unknown',
