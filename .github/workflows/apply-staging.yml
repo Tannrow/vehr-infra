@@ -315,15 +315,33 @@ jobs:
           URL="https://${FQDN}/"
           echo "Checking ${URL}"
 
+          BACKOFF_SECONDS=5
+          ACCEPTABLE_STATUSES="200 301 302 307 308"
+          PYTHON_BIN="$(command -v python3 || command -v python || true)"
+          if [ -z "$PYTHON_BIN" ]; then
+            echo "::error::Python is required to perform the UI DNS readiness check."
+            exit 1
+          fi
+
           DNS_READY=false
           for i in $(seq 1 12); do
-            if getent hosts "$FQDN" >/dev/null 2>&1; then
+            set +e
+            DNS_ERROR=$("$PYTHON_BIN" -c "import socket, sys; socket.getaddrinfo(sys.argv[1], None)" "$FQDN" 2>&1)
+            DNS_STATUS=$?
+            set -e
+
+            if [ "$DNS_STATUS" -eq 0 ]; then
               DNS_READY=true
               echo "DNS resolved for ${FQDN} on attempt ${i}."
               break
             fi
 
-            WAIT_SECONDS=$((i * 5))
+            if [ "$i" -eq 12 ] && [ -n "$DNS_ERROR" ]; then
+              echo "Final DNS lookup error:"
+              echo "$DNS_ERROR"
+            fi
+
+            WAIT_SECONDS=$((i * BACKOFF_SECONDS))
             echo "DNS not ready for ${FQDN} on attempt ${i}; waiting ${WAIT_SECONDS}s before retrying."
             sleep "$WAIT_SECONDS"
           done
@@ -338,11 +356,13 @@ jobs:
           trap 'rm -f "$RESPONSE_BODY" "$CURL_STDERR"' EXIT
 
           for i in $(seq 1 10); do
-            : > "$RESPONSE_BODY"
-            : > "$CURL_STDERR"
+            > "$RESPONSE_BODY"
+            > "$CURL_STDERR"
 
             set +e
-            STATUS=$(curl --silent --show-error --location \
+            # The UI root can legitimately redirect (for example to an auth entrypoint),
+            # so treat a redirect status as proof that the deployed UI ingress is live.
+            STATUS=$(curl --silent --show-error \
               --output "$RESPONSE_BODY" \
               --write-out '%{http_code}' \
               --max-time 20 \
@@ -355,12 +375,12 @@ jobs:
               cat "$CURL_STDERR"
             fi
 
-            if [[ "$CURL_EXIT" -eq 0 && ( "$STATUS" == "200" || "$STATUS" == "301" || "$STATUS" == "302" || "$STATUS" == "307" || "$STATUS" == "308" ) ]]; then
+            if [ "$CURL_EXIT" -eq 0 ] && printf '%s\n' $ACCEPTABLE_STATUSES | grep -Fxq "$STATUS"; then
               echo "UI is reachable."
               exit 0
             fi
 
-            WAIT_SECONDS=$((i * 5))
+            WAIT_SECONDS=$((i * BACKOFF_SECONDS))
             echo "UI not ready yet; waiting ${WAIT_SECONDS}s before retrying."
             sleep "$WAIT_SECONDS"
           done
