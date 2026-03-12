@@ -103,6 +103,12 @@ and trigger deployments here.
 | `ACR_LOGIN_SERVER`                 | e.g. `vehrrevostagingacr.azurecr.io`                                       |
 | `INFRA_REPO_PAT` *(optional)*      | A fine-grained PAT with `workflow` scope on `vehr-infra`, used to trigger `repository_dispatch` and invoke the apply-staging workflow after a push |
 
+### vehr-infra
+
+| Secret / Variable                  | Description                                                                 |
+|------------------------------------|-----------------------------------------------------------------------------|
+| `APP_REPO_PAT` *(optional)*        | Fine-grained PAT with read access to `Tannrow/VEHR` and `Tannrow/revenue-ui`, used by the reusable API contract gate to check out private app repos before deploy |
+
 ---
 
 ## Key Vault Secrets
