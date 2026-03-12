@@ -1,0 +1,352 @@
+name: API Contract Check
+
+on:
+  workflow_call:
+    inputs:
+      backend_repository:
+        description: Backend repository to validate
+        required: false
+        type: string
+        default: Tannrow/VEHR
+      backend_ref:
+        description: Backend git ref to validate
+        required: false
+        type: string
+        default: main
+      frontend_repository:
+        description: Frontend repository to validate
+        required: false
+        type: string
+        default: Tannrow/revenue-ui
+      frontend_ref:
+        description: Frontend git ref to validate
+        required: false
+        type: string
+        default: main
+      backend_path:
+        description: Checkout path for the backend repository
+        required: false
+        type: string
+        default: backend
+      frontend_path:
+        description: Checkout path for the frontend repository
+        required: false
+        type: string
+        default: revenue-ui
+      schema_url:
+        description: URL used to fetch the generated OpenAPI schema
+        required: false
+        type: string
+        default: http://127.0.0.1:8000/openapi.json
+      comparison_schema_url:
+        description: Optional reference schema URL to diff against
+        required: false
+        type: string
+        default: ''
+      schema_baseline_path:
+        description: Optional repository-relative schema file to diff against
+        required: false
+        type: string
+        default: ''
+      schema_search_max_depth:
+        description: Max directory depth to search when auto-discovering a baseline schema file
+        required: false
+        type: number
+        default: 3
+      contract_test_path:
+        description: Backend contract test path to execute with pytest
+        required: false
+        type: string
+        default: tests/test_api_contracts.py
+    secrets:
+      APP_REPO_PAT:
+        required: false
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    name: Verify backend API contracts
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout backend repository
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ inputs.backend_repository }}
+          ref: ${{ inputs.backend_ref }}
+          path: ${{ inputs.backend_path }}
+          token: ${{ secrets.APP_REPO_PAT || github.token }}
+
+      - name: Checkout frontend repository
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ inputs.frontend_repository }}
+          ref: ${{ inputs.frontend_ref }}
+          path: ${{ inputs.frontend_path }}
+          token: ${{ secrets.APP_REPO_PAT || github.token }}
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install backend test dependencies
+        working-directory: ${{ inputs.backend_path }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          python -m pip install --upgrade pip
+
+          if [ -f requirements.txt ]; then
+            python -m pip install -r requirements.txt
+          fi
+
+          if [ -f requirements-dev.txt ]; then
+            python -m pip install -r requirements-dev.txt
+          fi
+
+          if [ -f pyproject.toml ] || [ -f setup.py ]; then
+            python -m pip install -e .
+          fi
+
+          if ! python -c "import pytest" >/dev/null 2>&1; then
+            python -m pip install pytest
+          fi
+
+      - name: Start backend locally with docker compose
+        id: compose
+        working-directory: ${{ inputs.backend_path }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          if docker compose version >/dev/null 2>&1; then
+            echo "command=docker compose" >> "$GITHUB_OUTPUT"
+            docker compose up -d --build
+            exit 0
+          fi
+
+          if command -v docker-compose >/dev/null 2>&1; then
+            echo "command=docker-compose" >> "$GITHUB_OUTPUT"
+            docker-compose up -d --build
+            exit 0
+          fi
+
+          echo "::error::Neither 'docker compose' nor 'docker-compose' is available on the runner."
+          exit 1
+
+      - name: Fetch OpenAPI schema
+        id: schema
+        shell: bash
+        env:
+          SCHEMA_URL: ${{ inputs.schema_url }}
+        run: |
+          set -euo pipefail
+
+          RAW_SCHEMA_PATH="$RUNNER_TEMP/openapi-current.json"
+          NORMALIZED_SCHEMA_PATH="$RUNNER_TEMP/openapi-current.normalized.json"
+
+          for attempt in $(seq 1 30); do
+            if curl --silent --show-error --fail "$SCHEMA_URL" -o "$RAW_SCHEMA_PATH"; then
+              break
+            fi
+
+            if [ "$attempt" -eq 30 ]; then
+              echo "::error::Unable to fetch OpenAPI schema from $SCHEMA_URL after ${attempt} attempts."
+              exit 1
+            fi
+
+            wait_seconds=$((attempt * 2))
+            if [ "$wait_seconds" -gt 10 ]; then
+              wait_seconds=10
+            fi
+
+            sleep "$wait_seconds"
+          done
+
+          python - "$RAW_SCHEMA_PATH" "$NORMALIZED_SCHEMA_PATH" <<'PY'
+          import json
+          import pathlib
+          import sys
+
+          source = pathlib.Path(sys.argv[1])
+          target = pathlib.Path(sys.argv[2])
+
+          with source.open() as handle:
+              data = json.load(handle)
+
+          target.write_text(json.dumps(data, indent=2, sort_keys=True) + "\n")
+          PY
+
+          {
+            echo "raw_path=$RAW_SCHEMA_PATH"
+            echo "normalized_path=$NORMALIZED_SCHEMA_PATH"
+          } >> "$GITHUB_OUTPUT"
+
+          {
+            echo "## API contract gate"
+            echo
+            echo "- Backend repository: \`${{ inputs.backend_repository }}@${{ inputs.backend_ref }}\`"
+            echo "- Frontend repository: \`${{ inputs.frontend_repository }}@${{ inputs.frontend_ref }}\`"
+            echo "- Schema URL: \`$SCHEMA_URL\`"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Capture schema diff
+        id: schema_diff
+        shell: bash
+        env:
+          BACKEND_PATH: ${{ inputs.backend_path }}
+          FRONTEND_PATH: ${{ inputs.frontend_path }}
+          SCHEMA_BASELINE_PATH: ${{ inputs.schema_baseline_path }}
+          SCHEMA_SEARCH_MAX_DEPTH: ${{ inputs.schema_search_max_depth }}
+          COMPARISON_SCHEMA_URL: ${{ inputs.comparison_schema_url }}
+          CURRENT_SCHEMA_PATH: ${{ steps.schema.outputs.normalized_path }}
+        run: |
+          set -euo pipefail
+
+          BASELINE_SCHEMA_PATH="$RUNNER_TEMP/openapi-baseline.json"
+          NORMALIZED_BASELINE_PATH="$RUNNER_TEMP/openapi-baseline.normalized.json"
+          DIFF_PATH="$RUNNER_TEMP/openapi-schema.diff"
+          RESOLVED_BASELINE_PATH=''
+
+          normalize_json() {
+            local source_path=$1
+            local target_path=$2
+
+            python - "$source_path" "$target_path" <<'PY'
+            import json
+            import pathlib
+            import sys
+
+            source = pathlib.Path(sys.argv[1])
+            target = pathlib.Path(sys.argv[2])
+
+            with source.open() as handle:
+                data = json.load(handle)
+
+            target.write_text(json.dumps(data, indent=2, sort_keys=True) + "\n")
+            PY
+          }
+
+          if [ -n "$COMPARISON_SCHEMA_URL" ]; then
+            curl --silent --show-error --fail "$COMPARISON_SCHEMA_URL" -o "$BASELINE_SCHEMA_PATH"
+            normalize_json "$BASELINE_SCHEMA_PATH" "$NORMALIZED_BASELINE_PATH"
+            RESOLVED_BASELINE_PATH="$COMPARISON_SCHEMA_URL"
+          elif [ -n "$SCHEMA_BASELINE_PATH" ]; then
+            for candidate in \
+              "$BACKEND_PATH/$SCHEMA_BASELINE_PATH" \
+              "$FRONTEND_PATH/$SCHEMA_BASELINE_PATH"; do
+              if [ -f "$candidate" ]; then
+                normalize_json "$candidate" "$NORMALIZED_BASELINE_PATH"
+                RESOLVED_BASELINE_PATH="$candidate"
+                break
+              fi
+            done
+          else
+            while IFS= read -r candidate; do
+              normalize_json "$candidate" "$NORMALIZED_BASELINE_PATH"
+              RESOLVED_BASELINE_PATH="$candidate"
+              break
+            done < <(find "$BACKEND_PATH" "$FRONTEND_PATH" -maxdepth "$SCHEMA_SEARCH_MAX_DEPTH" -type f \( -name 'openapi*.json' -o -name 'swagger*.json' \) | sort)
+          fi
+
+          if [ -z "$RESOLVED_BASELINE_PATH" ]; then
+            echo "resolved_baseline=" >> "$GITHUB_OUTPUT"
+            echo "diff_path=" >> "$GITHUB_OUTPUT"
+            echo "detected_changes=false" >> "$GITHUB_OUTPUT"
+            echo "No comparison schema was configured; skipping schema diff generation."
+            exit 0
+          fi
+
+          if diff -u "$NORMALIZED_BASELINE_PATH" "$CURRENT_SCHEMA_PATH" > "$DIFF_PATH"; then
+            echo "detected_changes=false" >> "$GITHUB_OUTPUT"
+            echo "No schema diff detected against $RESOLVED_BASELINE_PATH."
+          else
+            echo "detected_changes=true" >> "$GITHUB_OUTPUT"
+            echo "::group::OpenAPI schema diff"
+            cat "$DIFF_PATH"
+            echo "::endgroup::"
+            {
+              echo "## OpenAPI schema diff"
+              echo
+              echo "Compared against: \`$RESOLVED_BASELINE_PATH\`"
+              echo
+              echo '```diff'
+              cat "$DIFF_PATH"
+              echo '```'
+            } >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+          {
+            echo "resolved_baseline=$RESOLVED_BASELINE_PATH"
+            echo "diff_path=$DIFF_PATH"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Run backend contract tests
+        working-directory: ${{ inputs.backend_path }}
+        shell: bash
+        env:
+          CONTRACT_TEST_PATH: ${{ inputs.contract_test_path }}
+        run: |
+          set -euo pipefail
+          pytest "$CONTRACT_TEST_PATH"
+
+      - name: Install frontend dependencies
+        working-directory: ${{ inputs.frontend_path }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          npm install
+
+      - name: Validate frontend contract scripts
+        working-directory: ${{ inputs.frontend_path }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          node <<'NODE'
+          const pkg = require('./package.json');
+          const scripts = pkg.scripts || {};
+          const missing = ['generate-api-types', 'build'].filter((name) => !scripts[name]);
+
+          if (missing.length) {
+            console.error(`::error::package.json is missing required npm script(s): ${missing.join(', ')}`);
+            process.exit(1);
+          }
+          NODE
+
+      - name: Generate frontend API types
+        working-directory: ${{ inputs.frontend_path }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          npm run generate-api-types
+
+      - name: Verify frontend compilation
+        working-directory: ${{ inputs.frontend_path }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          npm run build
+
+      - name: Highlight schema diff on contract failures
+        if: ${{ failure() && steps.schema_diff.outputs.detected_changes == 'true' }}
+        shell: bash
+        run: |
+          echo "::error::Contract verification failed after the OpenAPI schema changed. Review the diff above for breaking changes."
+
+      - name: Stop backend containers
+        if: ${{ always() && steps.compose.outputs.command != '' }}
+        working-directory: ${{ inputs.backend_path }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          ${{ steps.compose.outputs.command }} down --volumes --remove-orphans
