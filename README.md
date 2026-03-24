@@ -14,26 +14,26 @@ All Azure resources are managed as code here and deployed via GitHub Actions —
 to declare resources and GitHub Actions to plan and apply changes.
 
 ```
-Tannrow/revenue-ui  ──┐
-                       ├─► build & push image ──► ACR ──► apply-staging (vehr-infra)
-Tannrow/VEHR        ──┘
+360E/VEHR-Revenue-UI  ──┐
+                         ├─► build & push image ──► ACR ──► Azure Container Apps
+360E/VEHR              ──┘
                                                               │
-                                                  Azure Container Apps (staging / production)
+                                                  vehr-infra Bicep (ports/env/topology)
 ```
 
 ### Repositories
 
 | Repo | Role |
 |------|------|
-| `Tannrow/revenue-ui` | React/Vite frontend — owns Dockerfile, app code, and image push workflow |
-| `Tannrow/VEHR` | .NET backend — owns Dockerfile, app code, and image push workflow |
-| `Tannrow/vehr-infra` *(this repo)* | Infrastructure as code plus the VEHR Control Tower operations service |
+| `360E/VEHR-Revenue-UI` | Next.js App Router frontend — owns Dockerfile, app code, and staging image/deploy workflows |
+| `360E/VEHR` | Python/FastAPI backend — owns Dockerfile, app code, and staging image/deploy workflows |
+| `360E/VEHR-infra` *(this repo)* | Infrastructure as code plus the VEHR Control Tower operations service |
 
 ### How to make changes
 
 | Type of change | Where to make it | How it deploys |
 |----------------|-----------------|----------------|
-| App code (UI or backend) | In the respective app repo | App repo CI builds & pushes a new image, then triggers `apply-staging` here via `repository_dispatch` |
+| App code (UI or backend) | In the respective app repo | The app repo `deploy-staging` workflow builds, pushes, and updates the matching staging Container App directly; use this repo when the staging image/env contract itself needs to change |
 | Azure resource config (scaling, env vars, domains, secrets) | Edit `infra/parameters/staging.bicepparam` or `infra/parameters/production.bicepparam` in **this repo** | Open a PR → `plan-staging` runs What-If → merge → `apply-staging` deploys |
 | New Azure resource | Add a module in `infra/modules/` and wire it into `infra/main.bicep` | Same as above |
 | Emergency rollback | Run the **Rollback – Staging** workflow manually with the desired image tags | Workflow redeploys the specified tags |
@@ -65,13 +65,17 @@ workflows will run.
 ### Staging regional model
 
 - **Runtime region:** `eastus2`
-- **Runtime Container Apps:** `vehr-revenue-ui-staging-eastus2`, `vehr-revos-staging-eastus2`, and optionally `control-tower-staging-eastus2`
+- **Runtime Container Apps:** `vehr-revenue-ui-staging-eus2`, `vehr-revos-staging-eus2`, and optionally `control-tower-staging-eus2`
 - **Shared staging infrastructure reused in place:** `vehrrevostagingacr` (ACR) and `vehr-env-staging-logs` (Log Analytics)
 - **Container Apps environment:** `vehr-env-staging-eastus2`
 
 The staging workflows derive the runtime app names, region, and shared resource
 names from `infra/parameters/staging.bicepparam` so the repo has a single
 deploy-critical source of truth.
+
+Current runtime contract:
+- The UI Container App runs the Next.js server on port `3000` and injects `NEXT_PUBLIC_API_URL` plus `BACKEND_INTERNAL_URL`.
+- The backend Container App runs FastAPI on port `8000` and reads `DATABASE_URL`.
 
 ### Directory Structure
 

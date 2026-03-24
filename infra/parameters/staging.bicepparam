@@ -33,13 +33,11 @@ param logAnalyticsWorkspaceName = 'vehr-env-staging-logs'
 param logAnalyticsWorkspaceExists = true
 
 // ── App names ───────────────────────────────────────────────────────────────
-// Container Apps are region-bound, so the East US 2 deployment uses new,
-// unambiguous names instead of the legacy East US app identities.
-// Control Tower keeps its established service name prefix for consistency with
-// the existing app and workflow inputs.
-param uiAppName = 'vehr-revenue-ui-staging-eastus2'
-param backendAppName = 'vehr-revos-staging-eastus2'
-param controlTowerAppName = 'control-tower-staging-eastus2'
+// The runtime region is East US 2, but the live staging app identities and
+// app-repo workflows already target the established `-eus2` app names.
+param uiAppName = 'vehr-revenue-ui-staging-eus2'
+param backendAppName = 'vehr-revos-staging-eus2'
+param controlTowerAppName = 'control-tower-staging-eus2'
 
 // ── Images — updated by the apply-staging workflow ─────────────────────────
 // Format: <acrLoginServer>/<repo>:<tag>
@@ -48,8 +46,8 @@ param backendImage = 'vehrrevostagingacr.azurecr.io/vehr-api:latest'
 param controlTowerImage = ''
 
 // ── Ports ───────────────────────────────────────────────────────────────────
-param uiTargetPort = 80
-param backendTargetPort = 8080
+param uiTargetPort = 3000
+param backendTargetPort = 8000
 param controlTowerTargetPort = 3000
 
 // ── Scaling ─────────────────────────────────────────────────────────────────
@@ -78,17 +76,12 @@ param controlTowerEnvVars = [
   }
 ]
 
-param backendEnvVars = concat([
+param backendEnvVars = hasBackendSecretConfig ? [
   {
-    name: 'ASPNETCORE_ENVIRONMENT'
-    value: 'Staging'
-  }
-], hasBackendSecretConfig ? [
-  {
-    name: 'ConnectionStrings__DefaultConnection'
+    name: 'DATABASE_URL'
     secretRef: 'db-connection-string'
   }
-] : [])
+] : []
 
 // ── Secrets (pulled from Key Vault via managed identity) ───────────────────
 // ⚠️  OPTIONAL: Configure these before deploying a backend that needs database access:

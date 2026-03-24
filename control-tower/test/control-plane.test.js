@@ -169,11 +169,11 @@ test('default staging deployment app names target the East US 2 staging apps', (
 
     assert.equal(
       config.deployments.find((deployment) => deployment.service === 'revenue-ui')?.app_name,
-      'vehr-revenue-ui-staging-eastus2'
+      'vehr-revenue-ui-staging-eus2'
     );
     assert.equal(
       config.deployments.find((deployment) => deployment.service === 'vehr-backend-api')?.app_name,
-      'vehr-revos-staging-eastus2'
+      'vehr-revos-staging-eus2'
     );
   } finally {
     if (originalRevenueUiAppName === undefined) {

@@ -114,7 +114,7 @@ managed identity for access.
 
 | Key Vault Secret name       | Description                       | Referenced by        |
 |-----------------------------|-----------------------------------|----------------------|
-| `db-connection-string`      | SQL/Postgres connection string    | Backend Container App |
+| `db-connection-string`      | SQL/Postgres connection string injected into backend `DATABASE_URL` | Backend Container App |
 | *(add more as needed)*      |                                   |                      |
 
 ---

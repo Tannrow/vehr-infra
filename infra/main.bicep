@@ -53,10 +53,10 @@ param backendAppName string = 'vehr-api'
 param controlTowerAppName string = 'control-tower'
 
 @description('Target port for the UI app')
-param uiTargetPort int = 80
+param uiTargetPort int = 3000
 
 @description('Target port for the backend app')
-param backendTargetPort int = 8080
+param backendTargetPort int = 8000
 
 @description('Target port for the Control Tower app')
 param controlTowerTargetPort int = 3000
@@ -114,7 +114,8 @@ var commonTags = {
 var shouldDeployControlTower = !empty(controlTowerImage)
 var effectiveControlTowerManagedIdentityId = !empty(controlTowerManagedIdentityId) ? controlTowerManagedIdentityId : managedIdentityId
 var uiEnvVarNames = [for envVar in uiEnvVars: envVar.name]
-var uiHasApiUrl = contains(uiEnvVarNames, 'VITE_API_URL')
+var uiHasSupportedPublicApiUrl = contains(uiEnvVarNames, 'NEXT_PUBLIC_API_URL') || contains(uiEnvVarNames, 'NEXT_PUBLIC_API_BASE_URL') || contains(uiEnvVarNames, 'NEXT_PUBLIC_BACKEND_URL')
+var uiHasInternalApiUrl = contains(uiEnvVarNames, 'BACKEND_INTERNAL_URL')
 
 // ── Modules ─────────────────────────────────────────────────────────────────
 
@@ -150,9 +151,14 @@ module uiApp 'modules/container-app.bicep' = {
     containerImage: uiImage
     targetPort: uiTargetPort
     customDomains: uiCustomDomains
-    envVars: concat(uiEnvVars, uiHasApiUrl ? [] : [
+    envVars: concat(uiEnvVars, uiHasSupportedPublicApiUrl ? [] : [
       {
-        name: 'VITE_API_URL'
+        name: 'NEXT_PUBLIC_API_URL'
+        value: 'https://${backendApp.outputs.fqdn}'
+      }
+    ], uiHasInternalApiUrl ? [] : [
+      {
+        name: 'BACKEND_INTERNAL_URL'
         value: 'https://${backendApp.outputs.fqdn}'
       }
     ])
