@@ -24,10 +24,10 @@ param acrSku = 'Basic'
 param acrExists = true
 
 // ── Container Apps Environment ──────────────────────────────────────────────
-// The Container Apps environment is region-bound, so East US 2 gets its own
-// unique environment name instead of trying to recreate the legacy East US one.
-param containerAppsEnvName = 'vehr-env-staging-eastus2'
-param containerAppsEnvExists = false
+// The live staging environment is vehr-revos-staging-env-eus2 (East US 2).
+// Set useExisting so Bicep references it instead of trying to create a new one.
+param containerAppsEnvName = 'vehr-revos-staging-env-eus2'
+param containerAppsEnvExists = true
 // Reuse the shared staging workspace instead of duplicating logs per region.
 param logAnalyticsWorkspaceName = 'vehr-env-staging-logs'
 param logAnalyticsWorkspaceExists = true
